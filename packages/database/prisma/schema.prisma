@@ -1,0 +1,2198 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectType {
+  WEB
+  WECHAT_MINIPROGRAM
+  IOS
+  ANDROID
+}
+
+enum ApplicationPurpose {
+  WEBSITE
+  APP_WEBSITE
+  API
+  ADMIN
+  OTHER
+}
+
+enum RemoteUploadStatus {
+  IDLE
+  PREPARING
+  UPLOADING
+  COMPLETED
+  FAILED
+}
+
+enum DeploymentStatus {
+  CREATED
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum DeploymentStepStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PlatformRole {
+  USER
+  PLATFORM_ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum WorkspaceStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+  INTERNAL_TEST
+}
+
+enum UpgradeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCEL_AT_PERIOD_END
+  CANCELED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum SourceType {
+  GITHUB
+  GITLAB
+  UPLOAD
+}
+
+enum ArtifactType {
+  BUILD_OUTPUT
+  DOCKER_IMAGE
+  PACKAGE
+}
+
+enum ArtifactStatus {
+  CREATED
+  UPLOADING
+  READY
+  FAILED
+}
+
+enum ServiceStatus {
+  CREATING
+  RUNNING
+  STOPPED
+  FAILED
+}
+
+enum HealthStatus {
+  HEALTHY
+  UNHEALTHY
+  UNKNOWN
+}
+
+enum ApplicationVersionStatus {
+  DEPLOYING
+  ACTIVE
+  FAILED
+  ROLLED_BACK
+}
+
+enum CodeUpdateStatus {
+  PENDING
+  CONFIRMED
+  IGNORED
+}
+
+enum GitProvider {
+  GITHUB
+}
+
+enum GitConnectionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+  NEEDS_REAUTH
+}
+
+enum DeployableUnitType {
+  WEB
+  API
+  ADMIN
+  IOS
+  ANDROID
+  MINI_PROGRAM
+  MOBILE_CROSS_PLATFORM
+  OTHER
+}
+
+enum DeployableUnitStatus {
+  DETECTED
+  CONFIRMED
+  IGNORED
+  UNSUPPORTED
+}
+
+enum CloudResourceType {
+  SERVER
+  DATABASE
+  STORAGE
+  NETWORK
+  CACHE
+}
+
+enum CloudResourceStatus {
+  CREATING
+  RUNNING
+  STOPPED
+  FAILED
+  DELETING
+  DELETED
+}
+
+enum RemoteDeploymentStatus {
+  PENDING
+  CONNECTING
+  DEPLOYING
+  RUNNING
+  FAILED
+}
+
+enum DomainType {
+  CUSTOM
+  SUBDOMAIN
+}
+
+enum DomainStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+enum ApplicationDomainType {
+  SYSTEM
+  CUSTOM
+}
+
+enum ApplicationDomainStatus {
+  CREATING
+  ACTIVE
+  FAILED
+}
+
+enum ApplicationSslStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+enum ApplicationDnsStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
+enum SystemDnsMode {
+  MANUAL
+  PROVIDER
+}
+
+enum SystemRenewalMode {
+  MANUAL_DNS
+  AUTOMATIC_DNS
+}
+
+enum SystemRenewalStatus {
+  IDLE
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  ROLLBACK
+  CLEANUP_WARNING
+}
+
+enum CertificateStatus {
+  REQUESTING
+  ACTIVE
+  EXPIRED
+  FAILED
+}
+
+enum CertificateRenewalJobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  ROLLBACK
+  CLEANUP_WARNING
+}
+
+/// Step 29 — project access entry via Gateway (not DomainRecord / Deployment).
+enum GatewayRouteStatus {
+  PENDING
+  CONFIGURING
+  ACTIVE
+  FAILED
+  DISABLED
+}
+
+enum DiagnosisCategory {
+  BUILD_ERROR
+  DEPENDENCY_ERROR
+  CONFIG_ERROR
+  RUNTIME_ERROR
+  PORT_ERROR
+  DATABASE_ERROR
+  QUEUE_ERROR
+  UNKNOWN
+}
+
+enum DiagnosisSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RuntimeConfigSource {
+  ENV_EXAMPLE
+  CODE_REFERENCE
+  FRAMEWORK
+  MANUAL
+}
+
+enum RuntimeConfigRequirementStatus {
+  DETECTED
+  CONFIGURED
+  IGNORED
+}
+
+enum RuntimeConfigConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RuntimeConfigInjectionPhase {
+  BUILD
+  RUNTIME
+  BOTH
+}
+
+enum RuntimeConfigScopeType {
+  PROJECT
+  UNIT
+}
+
+model User {
+  id                      String   @id @default(cuid())
+  email                   String   @unique
+  passwordHash            String
+  name                    String
+  hasCompletedOnboarding  Boolean          @default(false)
+  onboardingStatus        OnboardingStatus @default(NOT_STARTED)
+  onboardingCompletedAt   DateTime?
+  isInternal              Boolean          @default(false)
+  platformRole            PlatformRole     @default(USER)
+  accountStatus           AccountStatus    @default(ACTIVE)
+  adminNote               String?
+  suspendedAt             DateTime?
+  suspendedById           String?
+  suspendReason           String?
+  lastLoginAt             DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  ownedWorkspaces Workspace[]        @relation("WorkspaceOwner")
+  memberships     WorkspaceMember[]
+  auditLogs       AuditLog[]
+  gitConnections  GitProviderConnection[]
+  launchRuns      LaunchRun[]
+  alphaTestSessions AlphaTestSession[]
+  productEvents     ProductEvent[]
+  sessions          AuthSession[]
+  suspendedBy         User?  @relation("UserSuspendedBy", fields: [suspendedById], references: [id], onDelete: SetNull)
+  suspendedUsers      User[] @relation("UserSuspendedBy")
+  suspendedWorkspaces Workspace[] @relation("WorkspaceSuspendedBy")
+  subscriptionOverrides Subscription[] @relation("SubscriptionOverrideBy")
+  grantedSubscriptions Subscription[] @relation("SubscriptionGrantedBy")
+  subscriptionEvents SubscriptionEvent[]
+  upgradeRequests UpgradeRequest[] @relation("UpgradeRequestedBy")
+  handledUpgradeRequests UpgradeRequest[] @relation("UpgradeHandledBy")
+  commercialOrders CommercialOrder[]
+  refunds Refund[]
+  entitlementOverrides WorkspaceEntitlementOverride[] @relation("EntitlementOverrideActor")
+}
+
+model Workspace {
+  id            String          @id @default(cuid())
+  name          String
+  ownerId       String
+  status        WorkspaceStatus @default(ACTIVE)
+  adminNote     String?
+  suspendedAt   DateTime?
+  suspendedById String?
+  suspendReason String?
+  timezone      String          @default("Asia/Shanghai")
+  trialConsumedAt DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  owner            User               @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  suspendedBy      User?              @relation("WorkspaceSuspendedBy", fields: [suspendedById], references: [id], onDelete: SetNull)
+  members          WorkspaceMember[]
+  projects         Project[]
+  providerAccounts ProviderAccount[]
+  cloudResources   CloudResource[]
+  serverInstances  ServerInstance[]
+  auditLogs        AuditLog[]
+  gitConnections   GitProviderConnection[]
+  databaseConnections DatabaseConnection[]
+  redisConnections RedisConnection[]
+  subscriptions    Subscription[]
+  invoices         Invoice[]
+  usageSnapshots   WorkspaceUsageSnapshot[]
+  subscriptionEvents SubscriptionEvent[]
+  notificationIntents NotificationIntent[]
+  upgradeRequests UpgradeRequest[]
+  billingProfile BillingProfile?
+  cloudCostRecords CloudCostRecord[]
+  commercialOrders CommercialOrder[]
+  payments Payment[]
+  entitlementOverrides WorkspaceEntitlementOverride[]
+  usageLedgers UsageLedger[]
+
+  @@index([status, createdAt])
+}
+
+model AuthSession {
+  id         String    @id @default(cuid())
+  userId     String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Plan {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  name         String
+  description  String?
+  priceMonthly Int
+  priceMonthlyCents Int?
+  currency     String     @default("CNY")
+  priceYearly  Int?
+  contactSales Boolean    @default(false)
+  billingIntervalOptions Json @default("[\"monthly\",\"yearly\"]")
+  recommendationLabel String?
+  marketingDescription String?
+  audience     String?
+  highlighted  Boolean    @default(false)
+  displayOrder Int        @default(0)
+  status       PlanStatus @default(ACTIVE)
+  maxProjects  Int?
+  maxMembers   Int?
+  maxDeploymentsPerMonth Int?
+  maxBuildMinutesPerMonth Int?
+  maxServers   Int?
+  maxDatabases Int?
+  maxRedisInstances Int?
+  featuresJson Json       @default("{}")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  subscriptions Subscription[]
+  pendingSubscriptions Subscription[] @relation("SubscriptionPendingPlan")
+  fallbackSubscriptions Subscription[] @relation("SubscriptionFallbackPlan")
+  invoices Invoice[]
+  versions PlanVersion[]
+  upgradeRequestsFrom UpgradeRequest[] @relation("UpgradeFromPlan")
+  upgradeRequestsTo UpgradeRequest[] @relation("UpgradeToPlan")
+  commercialOrders CommercialOrder[]
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  workspaceId        String
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
+  startedAt          DateTime           @default(now())
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  overrideSource     String?
+  overrideReason     String?
+  overrideById       String?
+  overriddenAt       DateTime?
+  quotaExceeded      Boolean            @default(false)
+  source             String             @default("DEFAULT_FREE")
+  activationSource   String?
+  trialStartedAt     DateTime?
+  trialEndsAt        DateTime?
+  pendingPlanId      String?
+  planChangeEffectiveAt DateTime?
+  fallbackPlanId     String?
+  complimentaryUntil DateTime?
+  complimentaryReason String?
+  grantedById        String?
+  manualAutoExtension Boolean           @default(false)
+  externalCustomerId String?
+  externalSubscriptionId String?
+  externalPriceId    String?
+  planVersionId      String?
+  paymentStatus      String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan         Plan      @relation(fields: [planId], references: [id], onDelete: Restrict)
+  pendingPlan  Plan?     @relation("SubscriptionPendingPlan", fields: [pendingPlanId], references: [id], onDelete: SetNull)
+  fallbackPlan Plan?     @relation("SubscriptionFallbackPlan", fields: [fallbackPlanId], references: [id], onDelete: SetNull)
+  overrideBy   User?     @relation("SubscriptionOverrideBy", fields: [overrideById], references: [id], onDelete: SetNull)
+  grantedBy    User?     @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  planVersion  PlanVersion? @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  invoices     Invoice[]
+  events       SubscriptionEvent[]
+
+  @@index([workspaceId, status])
+  @@index([planId])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  workspaceId    String
+  subscriptionId String?
+  amount         Int
+  currency       String        @default("CNY")
+  status         InvoiceStatus @default(DRAFT)
+  periodStart    DateTime
+  periodEnd      DateTime
+  source         String?
+  planId         String?
+  planVersionId  String?
+  invoiceNumber String? @unique
+  billingProfileSnapshot Json?
+  planVersionSnapshot Json?
+  subscriptionAmount Int?
+  cloudResourceAmount Int?
+  discountAmount Int?
+  taxAmount Int?
+  totalAmount Int?
+  amountCents Int?
+  productionTest Boolean @default(false)
+  commercialOrderId String? @unique
+  createdAt      DateTime      @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  plan         Plan?         @relation(fields: [planId], references: [id], onDelete: SetNull)
+  planVersion  PlanVersion?  @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  commercialOrder CommercialOrder? @relation(fields: [commercialOrderId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([subscriptionId])
+}
+
+model PlanVersion {
+  id             String    @id @default(cuid())
+  planId         String
+  version        Int
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  priceMonthly   Int
+  priceMonthlyCents Int?
+  priceYearly    Int?
+  currency       String    @default("CNY")
+  limitsJson     Json
+  featuresJson   Json      @default("{}")
+  grandfathered  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  plan          Plan           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+  invoices      Invoice[]
+  commercialOrders CommercialOrder[]
+
+  @@unique([planId, version])
+  @@index([planId, effectiveTo])
+}
+
+model UpgradeRequest {
+  id              String               @id @default(cuid())
+  workspaceId     String
+  fromPlanId      String
+  requestedPlanId String
+  fromSource      String?
+  reason          String
+  status          UpgradeRequestStatus @default(PENDING)
+  requestedById   String
+  handledById     String?
+  handledAt       DateTime?
+  createdAt       DateTime             @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fromPlan      Plan      @relation("UpgradeFromPlan", fields: [fromPlanId], references: [id], onDelete: Restrict)
+  requestedPlan Plan      @relation("UpgradeToPlan", fields: [requestedPlanId], references: [id], onDelete: Restrict)
+  requestedBy   User      @relation("UpgradeRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  handledBy     User?     @relation("UpgradeHandledBy", fields: [handledById], references: [id], onDelete: SetNull)
+  orders        CommercialOrder[]
+
+  @@index([workspaceId, status])
+  @@index([status, createdAt])
+}
+
+enum CloudCostResourceType {
+  SERVER
+  DATABASE
+  REDIS
+  STORAGE
+  BANDWIDTH
+  DOMAIN
+  OTHER
+}
+
+enum CloudCostSource {
+  ESTIMATED
+  PROVIDER_BILL
+  MANUAL_IMPORT
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum DiscountStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum CommercialOrderType {
+  SUBSCRIPTION_NEW
+  SUBSCRIPTION_UPGRADE
+  SUBSCRIPTION_RENEWAL
+  OTHER
+}
+
+enum CommercialOrderStatus {
+  DRAFT
+  PENDING_PAYMENT
+  PAID
+  FULFILLING
+  FULFILLED
+  PAYMENT_FAILED
+  CANCELED
+  EXPIRED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  REQUIRES_REVIEW
+}
+
+model BillingProfile {
+  id            String   @id @default(cuid())
+  workspaceId   String   @unique
+  billingName   String?
+  billingEmail  String?
+  companyName   String?
+  taxId         String?
+  country       String?
+  region        String?
+  city          String?
+  addressLine1  String?
+  addressLine2  String?
+  postalCode    String?
+  contactName   String?
+  contactPhone  String?
+  currency      String   @default("CNY")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model CloudCostRecord {
+  id            String                @id @default(cuid())
+  workspaceId   String
+  resourceType  CloudCostResourceType
+  resourceId    String?
+  provider      String?
+  periodStart   DateTime
+  periodEnd     DateTime
+  amount        Int?
+  currency      String                @default("CNY")
+  estimated     Boolean               @default(true)
+  source        CloudCostSource       @default(ESTIMATED)
+  metadataSafe  Json                  @default("{}")
+  createdAt     DateTime              @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, periodStart])
+  @@index([resourceType, resourceId])
+}
+
+model Discount {
+  id         String         @id @default(cuid())
+  code       String         @unique
+  name       String
+  type       DiscountType
+  value      Int
+  currency   String         @default("CNY")
+  validFrom  DateTime?
+  validUntil DateTime?
+  status     DiscountStatus @default(DRAFT)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model CommercialOrder {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  orderNumber       String                @unique
+  type              CommercialOrderType
+  status            CommercialOrderStatus @default(DRAFT)
+  planId            String?
+  planVersionId     String?
+  billingInterval   String                @default("monthly")
+  subscriptionFee   Int?
+  cloudCostEstimate Int?
+  discountAmount    Int                   @default(0)
+  taxAmount         Int?
+  totalAmount       Int?
+  totalAmountCents  Int?
+  currency          String                @default("CNY")
+  upgradeRequestId  String?
+  createdById       String?
+  amountLockedAt    DateTime?
+  fulfillmentLockedAt DateTime?
+  fulfillmentFailOnce Boolean             @default(false)
+  fulfilledAt       DateTime?
+  createdAt         DateTime              @default(now())
+  expiresAt         DateTime?
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan           Plan?           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  planVersion    PlanVersion?    @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+  upgradeRequest UpgradeRequest? @relation(fields: [upgradeRequestId], references: [id], onDelete: SetNull)
+  createdBy      User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  payments       Payment[]
+  invoices       Invoice[]
+  refunds        Refund[]
+
+  @@index([workspaceId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Payment {
+  id                  String        @id @default(cuid())
+  workspaceId         String
+  orderId             String
+  provider            String?
+  externalPaymentId   String?
+  providerCheckoutId  String?
+  merchantOrderNo     String?       @unique
+  providerTradeNo     String?
+  providerRequestId   String?
+  environment         String?
+  lastQueryState      String?
+  lastQueriedAt       DateTime?
+  amount              Int
+  currency            String        @default("CNY")
+  status              PaymentStatus @default(PENDING)
+  attemptNumber       Int           @default(1)
+  isTestPayment       Boolean       @default(false)
+  isProductionTest    Boolean       @default(false)
+  amountCents         Int?
+  failureCode         String?
+  failureMessageSafe  String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  paidAt              DateTime?
+  failedAt            DateTime?
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  order     CommercialOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  webhooks  PaymentWebhookEvent[]
+  refunds   Refund[]
+
+  @@index([workspaceId, createdAt])
+  @@index([orderId])
+  @@index([provider, externalPaymentId])
+  @@index([provider, status, createdAt])
+}
+
+model PaymentProviderAccount {
+  id                  String    @id @default(cuid())
+  provider            String
+  environment         String
+  displayName         String
+  appId               String?
+  gatewayUrl          String?
+  notifyUrl           String?
+  returnUrl           String?
+  publicKey           String?
+  credentialEncrypted String?
+  appReady            Boolean   @default(false)
+  status              String    @default("UNCONFIGURED")
+  lastVerifiedAt      DateTime?
+  lastSuccessAt       DateTime?
+  lastErrorCode       String?
+  lastWebhookAt       DateTime?
+  lastWebhookStatus   String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([provider, environment])
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model PaymentWebhookEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  externalEventId String
+  eventType       String
+  payloadHash     String
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  status          String
+  errorCode       String?
+  paymentId       String?
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, externalEventId])
+  @@index([paymentId])
+}
+
+model Refund {
+  id               String       @id @default(cuid())
+  paymentId        String
+  orderId          String
+  amount           Int
+  amountCents      Int?
+  currency         String       @default("CNY")
+  status           RefundStatus @default(PENDING)
+  reason           String?
+  providerRefundId String?
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  refundedAt       DateTime?
+
+  payment   Payment         @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  order     CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdBy User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@index([orderId])
+}
+
+model SubscriptionEvent {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  subscriptionId String
+  eventType      String
+  fromPlanId     String?
+  toPlanId       String?
+  effectiveAt    DateTime
+  actorUserId    String?
+  source         String
+  metadataSafe   Json     @default("{}")
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([subscriptionId, createdAt])
+}
+
+model NotificationIntent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  type        String
+  periodKey   String
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, type, periodKey])
+}
+
+model WorkspaceUsageSnapshot {
+  id                          String   @id @default(cuid())
+  workspaceId                 String
+  periodStart                 DateTime
+  periodEnd                   DateTime
+  projectCount                Int      @default(0)
+  memberCount                 Int      @default(0)
+  activeServiceCount          Int      @default(0)
+  deploymentCount             Int      @default(0)
+  successfulDeploymentCount   Int      @default(0)
+  failedDeploymentCount       Int      @default(0)
+  buildCount                  Int      @default(0)
+  buildDurationSeconds        Int?
+  bandwidthBytes              Int?
+  storageBytes                Int?
+  serverCount                 Int      @default(0)
+  databaseCount               Int      @default(0)
+  redisCount                  Int      @default(0)
+  estimatedCloudCost          Int?
+  estimated                   Boolean  @default(true)
+  createdAt                   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, periodStart])
+  @@index([workspaceId, createdAt])
+}
+
+/** Beta M6 — temporary entitlement override (does not mutate PlanVersion). */
+model WorkspaceEntitlementOverride {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  entitlementsJson  Json
+  reason            String
+  actorId           String?
+  expiresAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation("EntitlementOverrideActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, expiresAt])
+  @@index([workspaceId, revokedAt])
+}
+
+/** Beta M6 — idempotent usage / quota ledger (not a second pricing system). */
+model UsageLedger {
+  id             String   @id @default(cuid())
+  workspaceId    String
+  eventType      String
+  resourceType   String?
+  resourceId     String?
+  quantity       Int      @default(1)
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  idempotencyKey String   @unique
+  metadataSafe   Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, eventType, createdAt])
+  @@index([workspaceId, periodStart])
+  @@index([resourceId])
+}
+
+model WorkspaceMember {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Project {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  name           String
+  slug           String
+  description    String?
+  sourceType     String
+  sourceUrl      String?
+  projectType    ProjectType
+  applicationPurpose ApplicationPurpose @default(WEBSITE)
+  status         String
+  framework      String?
+  repositoryUrl  String?
+  defaultBranch  String?
+  isDemo         Boolean     @default(false)
+  autoDeployEnabled Boolean  @default(false)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  environments      ProjectEnvironment[]
+  deployments       Deployment[]
+  sources           SourceRepository[]
+  domains              DomainRecord[]
+  applicationDomains   ApplicationDomain[]
+  gatewayRoutes        GatewayRoute[]
+  serviceInstances     ServiceInstance[]
+  deploymentPlans           DeploymentPlan[]
+  aiAnalyses                AiAnalysis[]
+  resourceRecommendations   ResourceRecommendation[]
+  cloudResources            CloudResource[]
+  projectAnalyses           ProjectAnalysis[]
+  applicationVersions       ApplicationVersion[]
+  pendingCodeUpdates        PendingCodeUpdate[]
+  deployableUnits           DeployableUnit[]
+  configRequirements        RuntimeConfigRequirement[]
+  configValues              RuntimeConfigValue[]
+  secretAuditEvents         SecretAuditEvent[]
+  databaseConnections       DatabaseConnection[]
+  redisConnections          RedisConnection[]
+  launchRuns                LaunchRun[]
+  alphaTestSessions         AlphaTestSession[]
+  /// Bumped when project shared runtime config values change (Step 24.3).
+  sharedConfigRevision      Int                  @default(0)
+  /// Last unit the user picked for go-live UX; not a permanent exclusive binding.
+  selectedDeployableUnitId  String?
+
+  @@unique([workspaceId, slug])
+}
+
+model SourceRepository {
+  id                   String     @id @default(cuid())
+  projectId            String
+  type                 SourceType
+  url                  String
+  branch               String
+  connectionId         String?
+  providerRepositoryId String?
+  fullName             String?
+  isPrivate            Boolean    @default(false)
+  authStatus           String     @default("OK")
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  connection      GitProviderConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  deployableUnits DeployableUnit[]
+
+  @@index([projectId, createdAt])
+  @@index([connectionId])
+}
+
+model DeployableUnit {
+  id                 String               @id @default(cuid())
+  projectId          String
+  sourceRepositoryId String?
+  name               String
+  type               DeployableUnitType
+  rootPath           String
+  framework          String?
+  packageManager     String?
+  buildCommand       String?
+  startCommand       String?
+  outputPath         String?
+  port               Int?
+  deployable         Boolean              @default(false)
+  confidence         Float                @default(0)
+  status             DeployableUnitStatus @default(DETECTED)
+  metadata           Json                 @default("{}")
+  /// Bumped when unit runtime config values change (Step 24.2).
+  configRevision     Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceRepository SourceRepository? @relation(fields: [sourceRepositoryId], references: [id], onDelete: SetNull)
+  deployments      Deployment[]
+  serviceInstances ServiceInstance[]
+  applicationDomains ApplicationDomain[]
+  gatewayRoutes      GatewayRoute[]
+  applicationVersions ApplicationVersion[]
+  primaryAnalyses  ProjectAnalysis[] @relation("PrimaryDeployableUnit")
+  configRequirements RuntimeConfigRequirement[]
+  configValues       RuntimeConfigValue[]
+  databaseConnectionUnits DatabaseConnectionUnit[]
+  redisConnectionUnits RedisConnectionUnit[]
+
+  @@unique([projectId, rootPath])
+  @@index([projectId, status])
+  @@index([sourceRepositoryId])
+}
+
+/// Unit-scoped runtime config requirement (Step 24.1).
+/// scope is fixed to UNIT for now; reserved for future PROJECT/WORKSPACE (24.3).
+model RuntimeConfigRequirement {
+  id                String                         @id @default(cuid())
+  projectId         String
+  deployableUnitId  String
+  scope             String                         @default("UNIT")
+  key               String
+  label             String
+  description       String                         @default("")
+  required          Boolean                        @default(false)
+  sensitive         Boolean                        @default(false)
+  managedByLaunchOS Boolean                        @default(false)
+  publicSafe        Boolean                        @default(false)
+  injectionPhase    RuntimeConfigInjectionPhase    @default(RUNTIME)
+  source            RuntimeConfigSource
+  sourceLocation    String?
+  defaultValue      String?
+  confidence        RuntimeConfigConfidence        @default(MEDIUM)
+  status            RuntimeConfigRequirementStatus @default(DETECTED)
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+
+  project        Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployableUnit DeployableUnit        @relation(fields: [deployableUnitId], references: [id], onDelete: Cascade)
+  values         RuntimeConfigValue[]
+
+  @@unique([deployableUnitId, key])
+  @@index([projectId, deployableUnitId])
+}
+
+model RuntimeConfigValue {
+  id               String                 @id @default(cuid())
+  projectId        String
+  scopeType        RuntimeConfigScopeType @default(UNIT)
+  /// projectId when scopeType=PROJECT; deployableUnitId when scopeType=UNIT.
+  scopeId          String
+  deployableUnitId String?
+  requirementId    String?
+  /// Legacy mirror of scopeType for compatibility.
+  scope            String                 @default("UNIT")
+  key              String
+  valueEncrypted   String
+  isSensitive      Boolean                @default(false)
+  source           String                 @default("MANUAL")
+  createdBy        String?
+  updatedBy        String?
+  /// Last time the secret value was replaced (Step 24.4).
+  lastRotatedAt    DateTime?
+  /// Optional rotation reminder interval in days; null = no reminder.
+  rotationIntervalDays Int?
+  /// When set, value is managed by a provider such as DATABASE_CONNECTION (Step 25.1).
+  provider         String?
+  providerRef      String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  project        Project                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployableUnit DeployableUnit?           @relation(fields: [deployableUnitId], references: [id], onDelete: Cascade)
+  requirement    RuntimeConfigRequirement? @relation(fields: [requirementId], references: [id], onDelete: SetNull)
+
+  @@unique([scopeType, scopeId, key])
+  @@index([projectId, scopeType])
+  @@index([projectId, deployableUnitId])
+  @@index([requirementId])
+  @@index([provider, providerRef])
+}
+
+enum DatabaseEngine {
+  POSTGRESQL
+}
+
+enum DatabaseConnectionStatus {
+  UNTESTED
+  CONNECTED
+  FAILED
+  UNAVAILABLE
+}
+
+enum DatabaseSslMode {
+  AUTO
+  REQUIRE
+  DISABLE
+}
+
+enum DatabaseTestStatus {
+  SUCCESS
+  FAILED
+}
+
+model DatabaseConnection {
+  id                   String                   @id @default(cuid())
+  workspaceId          String
+  projectId            String
+  name                 String
+  engine               DatabaseEngine           @default(POSTGRESQL)
+  status               DatabaseConnectionStatus @default(UNTESTED)
+  host                 String
+  port                 Int                      @default(5432)
+  databaseName         String
+  username             String
+  passwordEncrypted    String
+  sslMode              DatabaseSslMode          @default(AUTO)
+  /// MANUAL | ALIYUN_RDS
+  source               String                   @default("MANUAL")
+  cloudResourceId      String?
+  createdBy            String?
+  updatedBy            String?
+  lastTestedAt         DateTime?
+  lastTestStatus       DatabaseTestStatus?
+  lastTestErrorCode    String?
+  lastTestLatencyMs    Int?
+  lastTestLocation     String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  workspace     Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cloudResource CloudResource?          @relation(fields: [cloudResourceId], references: [id], onDelete: SetNull)
+  units         DatabaseConnectionUnit[]
+
+  @@index([projectId, createdAt])
+  @@index([workspaceId, projectId])
+  @@index([cloudResourceId])
+}
+
+model DatabaseConnectionUnit {
+  id                   String @id @default(cuid())
+  databaseConnectionId String
+  deployableUnitId     String
+  createdAt            DateTime @default(now())
+
+  databaseConnection DatabaseConnection @relation(fields: [databaseConnectionId], references: [id], onDelete: Cascade)
+  deployableUnit     DeployableUnit     @relation(fields: [deployableUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([databaseConnectionId, deployableUnitId])
+  @@index([deployableUnitId])
+}
+
+enum RedisConnectionStatus {
+  UNTESTED
+  CONNECTED
+  FAILED
+  UNAVAILABLE
+}
+
+enum RedisTlsMode {
+  AUTO
+  REQUIRE
+  DISABLE
+}
+
+model RedisConnection {
+  id                   String                @id @default(cuid())
+  workspaceId          String
+  projectId            String
+  name                 String
+  status               RedisConnectionStatus @default(UNTESTED)
+  host                 String
+  port                 Int                   @default(6379)
+  usernameEncrypted    String?
+  passwordEncrypted    String?
+  databaseIndex        Int                   @default(0)
+  tlsMode              RedisTlsMode          @default(AUTO)
+  /// MANUAL | ALIYUN_REDIS
+  source               String                @default("MANUAL")
+  cloudResourceId      String?
+  createdBy            String?
+  updatedBy            String?
+  lastTestedAt         DateTime?
+  lastTestStatus       DatabaseTestStatus?
+  lastTestErrorCode    String?
+  lastTestLatencyMs    Int?
+  lastTestLocation     String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  workspace     Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cloudResource CloudResource?       @relation(fields: [cloudResourceId], references: [id], onDelete: SetNull)
+  units         RedisConnectionUnit[]
+
+  @@index([projectId, createdAt])
+  @@index([workspaceId, projectId])
+  @@index([cloudResourceId])
+}
+
+model RedisConnectionUnit {
+  id                String   @id @default(cuid())
+  redisConnectionId String
+  deployableUnitId  String
+  createdAt         DateTime @default(now())
+
+  redisConnection RedisConnection @relation(fields: [redisConnectionId], references: [id], onDelete: Cascade)
+  deployableUnit  DeployableUnit  @relation(fields: [deployableUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([redisConnectionId, deployableUnitId])
+  @@index([deployableUnitId])
+}
+
+enum SecretAuditAction {
+  CREATED
+  UPDATED
+  DELETED
+  PROMOTED_TO_PROJECT
+  RESTORED_SHARED
+}
+
+model SecretAuditEvent {
+  id               String            @id @default(cuid())
+  projectId        String
+  deployableUnitId String?
+  scopeType        RuntimeConfigScopeType
+  scopeId          String
+  key              String
+  action           SecretAuditAction
+  actorUserId      String
+  metadata         Json?
+  createdAt        DateTime          @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([projectId, key])
+  @@index([projectId, deployableUnitId])
+}
+
+model GitProviderConnection {
+  id                String              @id @default(cuid())
+  userId            String
+  workspaceId       String
+  provider          GitProvider         @default(GITHUB)
+  installationId    String
+  providerAccountId String?
+  login             String
+  accountType       String?
+  status            GitConnectionStatus @default(ACTIVE)
+  /// Optional encrypted JSON for OAuth fallback only. GitHub App uses installationId.
+  encryptedSecrets  String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sources  SourceRepository[]
+
+  @@unique([workspaceId, provider, installationId])
+  @@index([workspaceId, provider, status])
+  @@index([userId])
+}
+
+model ProjectEnvironment {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  type      String
+  variables Json     @default("{}")
+  /// Step 28 — current successful REAL_EXECUTION deployment for this environment.
+  activeDeploymentId   String?
+  /// Step 28 — previous successful deployment (rollback target).
+  previousDeploymentId String?
+  createdAt DateTime @default(now())
+
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployments      Deployment[]
+  serviceInstances ServiceInstance[]
+  launchRuns       LaunchRun[]
+
+  @@unique([projectId, name])
+}
+
+model WorkerHeartbeat {
+  id         String   @id @default(cuid())
+  workerId   String   @unique
+  service    String
+  status     String
+  version    String?
+  /// Non-sensitive runtime metadata: consumedQueues, queueReady, etc.
+  meta       Json?
+  startedAt  DateTime
+  lastSeenAt DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([service, lastSeenAt])
+}
+
+model Deployment {
+  id             String           @id @default(cuid())
+  projectId      String
+  environmentId  String
+  deployableUnitId String?
+  status         DeploymentStatus @default(CREATED)
+  version        String?
+  sourceRevision String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  errorMessage   String?
+  retryCount     Int              @default(0)
+  maxRetry       Int              @default(3)
+  bullmqJobId      String?
+  lastActivityAt   DateTime?
+  queueStallCount  Int              @default(0)
+  serverInstanceId String?
+  sourceArtifactId String?
+  /// Step 27.2 — READY DOCKER_IMAGE archive used for managed remote load/run.
+  deployableArtifactId String?
+  uploadStatus     RemoteUploadStatus @default(IDLE)
+  uploadError      String?
+  uploadStartedAt  DateTime?
+  uploadFinishedAt DateTime?
+  /// Config revision / fingerprint metadata used for this deployment (no secret values).
+  configRevision   Int?
+  configFingerprint String?
+  configKeys       Json?
+  /// Step 27.1 — LOCAL | MANAGED_SERVER (never infer solely from serverInstanceId null).
+  targetType       String            @default("LOCAL")
+  /// REAL_EXECUTION counts toward quota. DRY_RUN, GATE_ONLY, PLAN, and VERIFY_ONLY do not.
+  usageClass       String            @default("REAL_EXECUTION")
+  /// Step 28 — client idempotency key (unique when set).
+  idempotencyKey   String?
+  /// Step 28 — unique execution attempt id for this deployment record.
+  executionAttemptId String?
+  /// Step 28 — current execution stage (QUEUED/BUILDING/...).
+  currentStage     String?
+  /// Step 28 — classified failure code (safe).
+  failureCode      String?
+  /// Step 28 — stage timeline [{stage,status,startedAt,finishedAt,durationMs,errorCode}].
+  stageHistory     Json?
+  /// Step 28 — readable release label e.g. v2026.09.29-1530.
+  releaseLabel     String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment  ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  deployableUnit DeployableUnit? @relation(fields: [deployableUnitId], references: [id], onDelete: SetNull)
+  serverInstance ServerInstance? @relation(fields: [serverInstanceId], references: [id], onDelete: SetNull)
+  sourceArtifact Artifact?       @relation("ReusedArtifact", fields: [sourceArtifactId], references: [id], onDelete: SetNull)
+  deployableArtifact Artifact?   @relation("DeployableArtifact", fields: [deployableArtifactId], references: [id], onDelete: SetNull)
+  steps       DeploymentStep[]
+  logs        DeploymentLog[]
+  stepLogs    DeploymentStepLog[]
+  artifacts          Artifact[]
+  diagnoses          DeploymentDiagnosis[]
+  remoteDeployments  RemoteDeployment[]
+  applicationVersion ApplicationVersion?
+
+  @@unique([idempotencyKey])
+  @@index([sourceArtifactId])
+  @@index([deployableArtifactId])
+  @@index([deployableUnitId])
+  @@index([projectId, environmentId, status])
+}
+
+model DeploymentPlan {
+  id           String   @id @default(cuid())
+  projectId    String
+  runtime      String
+  buildCommand String
+  startCommand String
+  port         Int
+  config       Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model CloudPlan {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  cpu         Int
+  memory      String
+  storage     String
+  database    String
+  description String
+  createdAt   DateTime @default(now())
+
+  recommendations ResourceRecommendation[]
+}
+
+model ResourceRecommendation {
+  id        String   @id @default(cuid())
+  projectId String
+  planId    String
+  reason    String
+  createdAt DateTime @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  plan    CloudPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
+}
+
+model AiAnalysis {
+  id        String   @id @default(cuid())
+  projectId String
+  result    Json
+  model     String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+model ProjectAnalysis {
+  id             String   @id @default(cuid())
+  projectId      String
+  repositoryPath String
+  framework      String
+  packageManager String?
+  buildCommand   String?
+  startCommand   String?
+  port           Int?
+  confidence     Float
+  primaryUnitId  String?
+  createdAt      DateTime @default(now())
+
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  primaryUnit DeployableUnit? @relation("PrimaryDeployableUnit", fields: [primaryUnitId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([primaryUnitId])
+}
+
+model DeploymentDiagnosis {
+  id           String             @id @default(cuid())
+  deploymentId String
+  category     DiagnosisCategory
+  severity     DiagnosisSeverity
+  title        String
+  description  String
+  solution     String
+  fixPrompt    String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  deployment Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+
+  @@index([deploymentId, createdAt])
+}
+
+model DeploymentStep {
+  id           String               @id @default(cuid())
+  deploymentId String
+  stepKey      String
+  name         String
+  status       DeploymentStepStatus @default(PENDING)
+  order        Int
+  attempt      Int                  @default(1)
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  errorMessage String?
+  command      String?
+  exitCode     Int?
+  duration     Int?
+  metadata     Json?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  deployment Deployment      @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  logs       DeploymentLog[]
+  commandLogs DeploymentStepLog[]
+
+  @@unique([deploymentId, stepKey, attempt])
+  @@index([deploymentId, order])
+}
+
+model DeploymentStepLog {
+  id           String   @id @default(cuid())
+  deploymentId String
+  stepId       String
+  command      String
+  cwd          String
+  stdout       String   @default("")
+  stderr       String   @default("")
+  exitCode     Int
+  duration     Int
+  createdAt    DateTime @default(now())
+
+  deployment Deployment     @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  step       DeploymentStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([stepId, createdAt])
+  @@index([deploymentId, createdAt])
+}
+
+model DeploymentLog {
+  id           String   @id @default(cuid())
+  deploymentId String
+  stepId       String?
+  level        String
+  message      String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  deployment Deployment      @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  step       DeploymentStep? @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@index([deploymentId, createdAt])
+}
+
+model Artifact {
+  id           String         @id @default(cuid())
+  deploymentId String
+  type         ArtifactType
+  storagePath  String
+  size         Int
+  status       ArtifactStatus @default(CREATED)
+  /// SHA-256 of archived payload when type=DOCKER_IMAGE archive.
+  checksum     String?
+  /// Image archive metadata (imageTag, architecture, containerPort, …). Never secrets.
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+
+  deployment       Deployment        @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  serviceInstances ServiceInstance[]
+  reusedByDeployments Deployment[]   @relation("ReusedArtifact")
+  deployableForDeployments Deployment[] @relation("DeployableArtifact")
+
+  @@index([deploymentId, createdAt])
+}
+
+model ApplicationVersion {
+  id            String                    @id @default(cuid())
+  projectId     String
+  deploymentId  String                    @unique
+  deployableUnitId String?
+  version       String
+  commitSha     String                    @default("")
+  commitMessage String                    @default("")
+  status        ApplicationVersionStatus  @default(DEPLOYING)
+  /// Unit config revision applied by this version (keys only, never secret values).
+  configRevision    Int?
+  configFingerprint String?
+  configKeys        Json?
+  createdAt     DateTime                  @default(now())
+
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployment     Deployment      @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  deployableUnit DeployableUnit? @relation(fields: [deployableUnitId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([deployableUnitId])
+}
+
+model PendingCodeUpdate {
+  id            String           @id @default(cuid())
+  projectId     String
+  commitSha     String
+  commitMessage String           @default("")
+  status        CodeUpdateStatus @default(PENDING)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, commitSha])
+  @@index([projectId, createdAt])
+}
+
+model ServiceInstance {
+  id            String        @id @default(cuid())
+  projectId     String
+  environmentId String
+  deployableUnitId String?
+  artifactId    String
+  runtime       String
+  runtimeMode   String        @default("mock")
+  status        ServiceStatus @default(CREATING)
+  containerId   String?
+  port          Int?
+  imageTag      String?
+  imageId       String?
+  serverInstanceId String?
+  externalPort  Int?
+  internalPort  Int?
+  healthStatus  HealthStatus  @default(UNKNOWN)
+  lastHealthCheckAt DateTime?
+  responseTimeMs Int?
+  healthMessage String?
+  /// Config revision active in this running instance (no secret values).
+  configRevision    Int?
+  configFingerprint String?
+  configKeys        Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment    ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  deployableUnit DeployableUnit?    @relation(fields: [deployableUnitId], references: [id], onDelete: SetNull)
+  artifact       Artifact           @relation(fields: [artifactId], references: [id], onDelete: Restrict)
+  server         ServerInstance?    @relation(fields: [serverInstanceId], references: [id], onDelete: SetNull)
+  domains        DomainRecord[]
+  gatewayRoutes  GatewayRoute[]
+  healthChecks   ServiceHealthCheck[]
+
+  @@index([projectId, createdAt])
+  @@index([deployableUnitId])
+}
+
+model ServiceHealthCheck {
+  id                String       @id @default(cuid())
+  serviceInstanceId String
+  status            HealthStatus
+  responseTimeMs    Int?
+  statusCode        Int?
+  message           String?
+  checkedAt         DateTime     @default(now())
+
+  serviceInstance ServiceInstance @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceInstanceId, checkedAt])
+}
+
+enum ServerScope {
+  WORKSPACE_OWNED
+  PLATFORM_MANAGED
+}
+
+model ServerInstance {
+  id                  String      @id @default(cuid())
+  /// Null only for PLATFORM_MANAGED nodes. User servers always belong to a workspace.
+  workspaceId         String?
+  scope               ServerScope @default(WORKSPACE_OWNED)
+  name                String
+  host                String
+  port                Int         @default(22)
+  username            String
+  credentialEncrypted String
+  provider            String      @default("CUSTOM")
+  status              String      @default("CREATED")
+  dockerStatus        String      @default("UNKNOWN")
+  /// Step 26.3+ initialization facts (non-secret)
+  metadata            Json        @default("{}")
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deployments Deployment[]
+  serviceInstances ServiceInstance[]
+  gatewayRoutes GatewayRoute[]
+
+  @@index([workspaceId, createdAt])
+  @@index([scope, status])
+}
+
+model GatewayRoute {
+  id                String             @id @default(cuid())
+  projectId         String
+  unitId            String
+  serviceInstanceId String?
+  serverInstanceId  String?
+  hostname          String
+  scheme            String             @default("https")
+  targetHost        String             @default("127.0.0.1")
+  targetPort        Int
+  healthPath        String             @default("/")
+  status            GatewayRouteStatus @default(PENDING)
+  /// Optional link to Certificate / DomainRecord id — never stores private keys.
+  certificateId     String?
+  isDefault         Boolean            @default(true)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  unit            DeployableUnit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  serviceInstance ServiceInstance? @relation(fields: [serviceInstanceId], references: [id], onDelete: SetNull)
+  serverInstance  ServerInstance?  @relation(fields: [serverInstanceId], references: [id], onDelete: SetNull)
+
+  @@unique([hostname])
+  @@index([projectId, unitId])
+  @@index([projectId, status])
+  @@index([serverInstanceId])
+  @@index([serviceInstanceId])
+}
+
+model Provider {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   @unique
+  createdAt DateTime @default(now())
+
+  accounts  ProviderAccount[]
+  resources CloudResource[]
+}
+
+model ProviderAccount {
+  id                   String   @id @default(cuid())
+  workspaceId          String
+  providerId           String
+  label                String?
+  region               String?
+  credentialEncrypted  String?
+  /// ACTIVE | PENDING | VERIFIED | FAILED
+  status               String   @default("ACTIVE")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  provider  Provider  @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, providerId])
+}
+
+model CloudResource {
+  id                   String              @id @default(cuid())
+  workspaceId          String
+  projectId            String?
+  providerId           String
+  type                 CloudResourceType
+  externalId           String
+  providerResourceId   String?
+  publicIp             String?
+  region               String?
+  instanceType         String?
+  status               CloudResourceStatus @default(CREATING)
+  metadata             Json                @default("{}")
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project              Project?              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider             Provider              @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  remoteDeployments    RemoteDeployment[]
+  databaseConnections  DatabaseConnection[]
+  redisConnections     RedisConnection[]
+
+  @@index([workspaceId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model RemoteDeployment {
+  id              String                 @id @default(cuid())
+  deploymentId    String
+  cloudResourceId String
+  status          RemoteDeploymentStatus @default(PENDING)
+  logs            String                 @default("")
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  deployment    Deployment    @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  cloudResource CloudResource @relation(fields: [cloudResourceId], references: [id], onDelete: Restrict)
+
+  @@index([deploymentId, startedAt])
+  @@index([cloudResourceId])
+}
+
+model ApplicationDomain {
+  id          String                   @id @default(cuid())
+  projectId   String
+  deployableUnitId String?
+  domain      String                   @unique
+  type        ApplicationDomainType
+  status      ApplicationDomainStatus  @default(CREATING)
+  dnsStatus   ApplicationDnsStatus     @default(PENDING)
+  sslStatus   ApplicationSslStatus     @default(PENDING)
+  runtimeHost String?
+  runtimePort Int?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  deployableUnit DeployableUnit? @relation(fields: [deployableUnitId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([deployableUnitId])
+}
+
+model SystemDomainConfig {
+  id              String             @id @default(cuid())
+  rootDomain      String
+  gatewayPublicIp String?
+  gatewayServerId String?
+  dnsMode         SystemDnsMode      @default(MANUAL)
+  dnsStatus       ApplicationDnsStatus @default(PENDING)
+  lastVerifiedAt  DateTime?
+  /// Wildcard TLS (*.rootDomain) — never store private keys here.
+  tlsStatus            ApplicationSslStatus @default(PENDING)
+  tlsCertificateDomain String?
+  tlsIssuer            String?
+  tlsExpiresAt         DateTime?
+  tlsLastVerifiedAt    DateTime?
+  tlsManager           String?
+  tlsCertPathHint      String?
+  /// System DNS provider for ACME automation (e.g. ALIYUN). Secrets live in ProviderAccount.
+  dnsProvider            String?
+  dnsProviderAccountId   String?
+  dnsProviderVerifiedAt  DateTime?
+  dnsProviderTxtTestAt   DateTime?
+  renewalMode            SystemRenewalMode   @default(MANUAL_DNS)
+  renewalStatus          SystemRenewalStatus @default(IDLE)
+  lastRenewalAt          DateTime?
+  lastRenewalResult      String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([rootDomain])
+}
+
+model CertificateRenewal {
+  id                 String                      @id @default(cuid())
+  rootDomain         String
+  certificateDomain  String
+  status             CertificateRenewalJobStatus @default(PENDING)
+  startedAt          DateTime                    @default(now())
+  completedAt        DateTime?
+  oldExpiresAt       DateTime?
+  newExpiresAt       DateTime?
+  issuer             String?
+  errorCode          String?
+  errorSummary       String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  @@index([rootDomain, startedAt])
+  @@index([status, startedAt])
+}
+
+model DomainRecord {
+  id                String       @id @default(cuid())
+  projectId         String
+  serviceInstanceId String
+  domain            String       @unique
+  type              DomainType
+  provider          String
+  status            DomainStatus @default(PENDING)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  serviceInstance ServiceInstance @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+  certificates    Certificate[]
+
+  @@index([projectId, createdAt])
+}
+
+model Certificate {
+  id        String             @id @default(cuid())
+  domainId  String
+  issuer    String
+  expiresAt DateTime?
+  status    CertificateStatus  @default(REQUESTING)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  domain DomainRecord @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  action      String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt])
+}
+
+/// Step 30 — One-click launch orchestration run.
+enum LaunchRunStatus {
+  DRAFT
+  PLANNING
+  READY
+  RUNNING
+  WAITING_CONFIRMATION
+  VERIFYING
+  SUCCESS
+  FAILED
+  CANCELLED
+  PARTIAL
+}
+
+enum LaunchTriggerType {
+  MANUAL
+  RETRY
+  RESUME
+  REDEPLOY
+}
+
+enum LaunchStage {
+  ANALYZE
+  DEPENDENCIES
+  INFRASTRUCTURE
+  BUILD
+  DEPLOY
+  PUBLIC_ENTRY
+  VERIFY
+}
+
+enum LaunchStepStatus {
+  PENDING
+  READY
+  RUNNING
+  WAITING
+  SKIPPED
+  SUCCESS
+  FAILED
+  BLOCKED
+  RECONCILING
+}
+
+enum LaunchStepDecision {
+  EXECUTE
+  REUSE
+  SKIP
+  BLOCK
+}
+
+model LaunchRun {
+  id              String            @id @default(cuid())
+  projectId       String
+  environmentId   String
+  status          LaunchRunStatus   @default(DRAFT)
+  triggerType     LaunchTriggerType @default(MANUAL)
+  createdByUserId String?
+  currentStage    LaunchStage?
+  currentStep     String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  failureCode     String?
+  failureMessage  String?
+  planVersion     String
+  /// Snapshot of plan inputs at creation (units/deps/server/gateway ids) — no secrets.
+  inputSnapshot   Json              @default("{}")
+  /// Plan output summary for UI (stages, reuse/create lists).
+  planSnapshot    Json              @default("{}")
+  /// Step 30 Phase 2 — billable confirmation binding.
+  confirmationId       String?
+  confirmedAt          DateTime?
+  confirmedByUserId    String?
+  confirmedPlanHash    String?
+  /// Non-secret confirmation payload (resources, specs, provider, planVersion).
+  confirmationSnapshot Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment ProjectEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  createdBy   User?              @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  steps       LaunchRunStep[]
+  alphaTestSessions AlphaTestSession[]
+
+  @@index([projectId, environmentId, status])
+  @@index([projectId, createdAt])
+  @@index([createdByUserId])
+  @@index([confirmationId])
+}
+
+model LaunchRunStep {
+  id             String              @id @default(cuid())
+  launchRunId    String
+  stage          LaunchStage
+  stepType       String
+  status         LaunchStepStatus    @default(PENDING)
+  decision       LaunchStepDecision  @default(EXECUTE)
+  executionOrder Int
+  dependsOn      String[]            @default([])
+  resourceType   String?
+  resourceId     String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  attemptCount   Int                 @default(0)
+  maxAttempts    Int                 @default(3)
+  failureCode    String?
+  failureMessage String?
+  /// Stable idempotency / reconcile key within a run (unit id or "default").
+  reconcileKey   String              @default("default")
+  /// Non-secret step metadata (decision reason, observed facts summary).
+  metadataJson   Json                @default("{}")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  launchRun LaunchRun @relation(fields: [launchRunId], references: [id], onDelete: Cascade)
+
+  @@index([launchRunId, executionOrder])
+  @@index([launchRunId, status])
+  @@unique([launchRunId, stepType, reconcileKey])
+}
+
+/// External Alpha user-test session. Analysis tags only — not a deploy model.
+enum AlphaSessionStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  ABANDONED
+}
+
+enum AlphaProjectType {
+  WEB
+  API
+  WEB_API
+}
+
+enum AlphaFrameworkTag {
+  VITE
+  NEXTJS
+  NODE
+  OTHER_SUPPORTED
+}
+
+enum AlphaDependencyTag {
+  POSTGRESQL
+  REDIS
+  NONE
+}
+
+enum AlphaHealthMark {
+  HEALTHY
+  UNHEALTHY
+  UNKNOWN
+}
+
+enum AlphaIssueSeverity {
+  P0
+  P1
+  P2
+  P3
+  P4
+}
+
+model AlphaTestSession {
+  id                       String              @id @default(cuid())
+  userId                   String
+  projectId                String?
+  launchRunId              String?
+  sessionStatus            AlphaSessionStatus  @default(PLANNED)
+  projectType              AlphaProjectType?
+  framework                AlphaFrameworkTag?
+  dependencies             AlphaDependencyTag?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  launchSucceeded          Boolean?
+  totalDurationMs          Int?
+  blockedStage             String?
+  blockedStep              String?
+  manualInterventionCount  Int                 @default(0)
+  primaryFailureCode       String?
+  publicUrl                String?
+  health10m                AlphaHealthMark     @default(UNKNOWN)
+  health1h                 AlphaHealthMark     @default(UNKNOWN)
+  health24h                AlphaHealthMark     @default(UNKNOWN)
+  sessionStartedAt         DateTime?
+  planCreatedAt            DateTime?
+  launchStartedAt          DateTime?
+  launchCompletedAt        DateTime?
+  publicVerifiedAt         DateTime?
+  knewNextStep             Int?
+  billingClear             Int?
+  failureUnderstandable    Int?
+  neededHelp               Int?
+  wouldContinue            Int?
+  freeFeedback             String?
+  feedbackSubmittedAt      DateTime?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  launchRun     LaunchRun?         @relation(fields: [launchRunId], references: [id], onDelete: SetNull)
+  interventions AlphaIntervention[]
+  events        ProductEvent[]
+
+  @@index([userId, createdAt])
+  @@index([projectId, sessionStatus])
+  @@index([launchRunId])
+}
+
+model AlphaIntervention {
+  id          String              @id @default(cuid())
+  sessionId   String
+  stage       String
+  reason      String
+  actionTaken String
+  resolved    Boolean             @default(false)
+  severity    AlphaIssueSeverity?
+  createdAt   DateTime            @default(now())
+
+  session AlphaTestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+/// Product analytics event. Metadata must stay secret-free.
+model ProductEvent {
+  id        String   @id @default(cuid())
+  name      String
+  userId    String?
+  projectId String?
+  sessionId String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  user    User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session AlphaTestSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([name, createdAt])
+  @@index([sessionId, createdAt])
+}

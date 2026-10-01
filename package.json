@@ -1,0 +1,43 @@
+{
+  "name": "launchos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LaunchOS — application deployment orchestration platform",
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @launchos/database db:generate",
+    "db:migrate": "pnpm --filter @launchos/database db:migrate",
+    "db:seed": "pnpm --filter @launchos/database db:seed",
+    "db:verify": "pnpm --filter @launchos/database db:verify",
+    "db:up": "pnpm --filter @launchos/database db:up"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/windows-x64",
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "bcrypt",
+      "esbuild",
+      "prisma",
+      "unrs-resolver"
+    ]
+  }
+}

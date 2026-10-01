@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Deployment" ADD COLUMN "retryCount" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Deployment" ADD COLUMN "maxRetry" INTEGER NOT NULL DEFAULT 3;

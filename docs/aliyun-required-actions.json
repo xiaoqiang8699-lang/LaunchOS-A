@@ -1,0 +1,62 @@
+{
+  "generatedAt": "2026-09-17T08:39:54.579Z",
+  "sourceFiles": [
+    "packages/providers/src/aliyun/alibaba-cloud-database-provider.ts",
+    "packages/providers/src/aliyun/alibaba-cloud-redis-provider.ts",
+    "packages/providers/src/aliyun/alibaba-cloud-capability-service.ts",
+    "packages/providers/src/aliyun/real-cloud-provider.ts",
+    "packages/providers/src/aliyun/alibaba-cloud-ecs-planner.ts",
+    "packages/providers/src/aliyun/alibaba-cloud-ecs-provisioner.ts"
+  ],
+  "actions": {
+    "rds": [
+      "rds:AllocateInstancePublicConnection",
+      "rds:CreateAccount",
+      "rds:CreateDBInstance",
+      "rds:CreateDatabase",
+      "rds:DeleteDBInstance",
+      "rds:DescribeAvailableClasses",
+      "rds:DescribeDBInstanceAttribute",
+      "rds:DescribeDBInstanceNetInfo",
+      "rds:DescribeDBInstances",
+      "rds:GrantAccountPrivilege",
+      "rds:ModifySecurityIps"
+    ],
+    "redis": [
+      "kvstore:AllocateInstancePublicConnection",
+      "kvstore:CreateInstance",
+      "kvstore:DeleteInstance",
+      "kvstore:DescribeAvailableResource",
+      "kvstore:DescribeDBInstanceNetInfo",
+      "kvstore:DescribeInstanceAttribute",
+      "kvstore:DescribeInstances",
+      "kvstore:ModifySecurityIps"
+    ],
+    "ecs": [
+      "ecs:AllocatePublicIpAddress",
+      "ecs:AuthorizeSecurityGroup",
+      "ecs:CreateSecurityGroup",
+      "ecs:DeleteInstance",
+      "ecs:DescribeAvailableResource",
+      "ecs:DescribeImages",
+      "ecs:DescribeInstanceTypes",
+      "ecs:DescribeInstances",
+      "ecs:DescribePrice",
+      "ecs:DescribeSecurityGroups",
+      "ecs:DescribeZones",
+      "ecs:RunInstances",
+      "ecs:TagResources"
+    ],
+    "vpc": [
+      "vpc:CreateVSwitch",
+      "vpc:CreateVpc",
+      "vpc:DescribeVSwitches",
+      "vpc:DescribeVpcs"
+    ],
+    "dns": [
+      "alidns:AddDomainRecord",
+      "alidns:DeleteDomainRecord",
+      "alidns:DescribeDomainRecords"
+    ]
+  }
+}

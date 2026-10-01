@@ -1,0 +1,87 @@
+﻿{
+  "step": "Step 28 Multi-Unit Managed Deployment 鈥?Phase 1 dry-run",
+  "projectId": "cmu3j24mv0001ri7wcsoa30hj",
+  "webUnitId": "cmu3j27340007ri7wcno1xrai",
+  "apiUnitId": "cmu3j272x0005ri7wlxlbajeu",
+  "targetServerInstanceId": "cmub78pz001sdripco5pexhdz",
+  "publicIp": "116.62.198.184",
+  "apiServiceInstance": "cmuc66642002hritk6h3cbwhe",
+  "apiRuntimePort": 39000,
+  "apiHealth": "HEALTHY",
+  "apiStatus": "RUNNING",
+  "apiPreserved": true,
+  "webUnitType": "WEB",
+  "webFramework": "VITE",
+  "webSourceArtifactId": "cmu3scwr3016fri3c35ryb3y2",
+  "webDeployableArtifactId": "cmuc6x7hd0001ri10yvj0rr6o",
+  "webDeployableArtifactType": "DOCKER_IMAGE",
+  "webDeployableArtifactReady": true,
+  "imageArchiveReady": true,
+  "webContainerPort": 80,
+  "plannedWebRuntimePort": 39001,
+  "portConflict": false,
+  "bindAddress": "127.0.0.1",
+  "webHealthPath": "/",
+  "healthPathSource": "ROOT_FALLBACK",
+  "webDependencyReady": true,
+  "webPostgresql": "NOT_REQUIRED",
+  "webRedis": "NOT_REQUIRED",
+  "apiPostgresql": "CONNECTED",
+  "apiRedis": "CONNECTED",
+  "dependencyIsolation": true,
+  "webRuntimeSecretsReady": true,
+  "webSecretIsolation": true,
+  "apiSecretIsolation": true,
+  "accessEntryStatus": "ACCESS_ENTRY_PENDING",
+  "remoteBuildRequired": false,
+  "remoteRegistryPullRequired": false,
+  "runtimePullPolicy": "never",
+  "architectureCompatible": true,
+  "imageArchitecture": "amd64",
+  "serverArchitecture": "x86_64",
+  "builderBaseImage": "node:20-alpine",
+  "builderBaseImagePresent": true,
+  "reservedPorts": [
+    39000,
+    22,
+    53
+  ],
+  "remoteListeningPortsInRange": [
+    39000
+  ],
+  "remoteSsOk": true,
+  "pendingWebDeployments": [],
+  "deploymentQueueReady": true,
+  "deploymentLockReady": true,
+  "deploymentLockKey": "deployment:cmu3j24mv0001ri7wcsoa30hj:cmu3j27340007ri7wcno1xrai",
+  "dynamicPublicExposure": false,
+  "tcpPublicProbes": [
+    {
+      "port": 39000,
+      "status": "filtered",
+      "code": null,
+      "ms": 2507
+    },
+    {
+      "port": 39001,
+      "status": "filtered",
+      "code": null,
+      "ms": 2505
+    },
+    {
+      "port": 39999,
+      "status": "filtered",
+      "code": null,
+      "ms": 2505
+    }
+  ],
+  "oldServerUntouched": true,
+  "canDeploy": true,
+  "blockers": [],
+  "WRITE_COMMANDS_EXECUTED_THIS_RUN": false,
+  "DEPLOYMENT_ENQUEUED": false,
+  "confirmDeployRefused": true,
+  "phase": 1
+}
+
+DRY_RUN complete. WRITE_COMMANDS_EXECUTED_THIS_RUN=false

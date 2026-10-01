@@ -1,0 +1,9 @@
+CREATE TYPE "AccountStatus" AS ENUM ('ACTIVE', 'SUSPENDED', 'ARCHIVED');
+
+ALTER TABLE "User" ADD COLUMN "accountStatus" "AccountStatus" NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE "User" ADD COLUMN "adminNote" TEXT;
+ALTER TABLE "User" ADD COLUMN "suspendedAt" TIMESTAMP(3);
+ALTER TABLE "User" ADD COLUMN "suspendedById" TEXT;
+ALTER TABLE "User" ADD COLUMN "suspendReason" TEXT;
+
+ALTER TABLE "User" ADD CONSTRAINT "User_suspendedById_fkey" FOREIGN KEY ("suspendedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -1,0 +1,104 @@
+import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { unzipSync, strFromU8 } from 'fflate';
+import {
+  assertExtractBudget,
+  assertZipSizeWithinLimit,
+  deriveAppNameFromZip,
+  isBlockedZipEntry,
+  sanitizeZipEntryPath,
+} from '@launchos/shared';
+
+export type ExtractedZipProject = {
+  appName: string;
+  extractRoot: string;
+  fileCount: number;
+  extractedBytes: number;
+};
+
+export async function extractOnboardingZip(input: {
+  projectId: string;
+  zipBuffer: Buffer;
+  originalName?: string;
+  workspaceDir: string;
+}): Promise<ExtractedZipProject> {
+  assertZipSizeWithinLimit(input.zipBuffer.byteLength);
+
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = unzipSync(new Uint8Array(input.zipBuffer));
+  } catch {
+    throw new Error('ZIP_INVALID');
+  }
+
+  await rm(input.workspaceDir, { recursive: true, force: true });
+  await mkdir(input.workspaceDir, { recursive: true });
+
+  let fileCount = 0;
+  let extractedBytes = 0;
+  let packageName: string | null = null;
+  const writtenRoots = new Set<string>();
+
+  for (const [rawName, data] of Object.entries(entries)) {
+    if (rawName.endsWith('/')) continue;
+    const safe = sanitizeZipEntryPath(rawName);
+    if (!safe) continue;
+    if (isBlockedZipEntry(safe)) continue;
+
+    fileCount += 1;
+    extractedBytes += data.byteLength;
+    assertExtractBudget({ fileCount, extractedBytes });
+
+    const target = resolve(input.workspaceDir, safe);
+    if (!target.startsWith(resolve(input.workspaceDir))) {
+      throw new Error('ZIP_SLIP');
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, data);
+    writtenRoots.add(safe.split('/')[0] || '');
+    if (safe === 'package.json' || safe.endsWith('/package.json')) {
+      try {
+        const parsed = JSON.parse(strFromU8(data)) as { name?: string };
+        if (parsed.name?.trim()) packageName = parsed.name.trim();
+      } catch {
+        // ignore invalid package.json
+      }
+    }
+  }
+
+  if (fileCount === 0) {
+    throw new Error('ZIP_EMPTY_CONTENT');
+  }
+
+  // If ZIP contained a single top-level directory, flatten is optional; keep as-is.
+  const rootDirName =
+    writtenRoots.size === 1 ? [...writtenRoots][0] || null : null;
+
+  return {
+    appName: deriveAppNameFromZip({
+      fileName: input.originalName,
+      packageName,
+      rootDirName,
+    }),
+    extractRoot: input.workspaceDir,
+    fileCount,
+    extractedBytes,
+  };
+}
+
+export function onboardingZipTempPath(uploadId: string): string {
+  const root = process.env.LAUNCHOS_UPLOAD_ROOT?.trim() || join(tmpdir(), 'launchos-uploads');
+  return join(root, `${uploadId}.zip`);
+}
+
+export async function persistZipUpload(uploadId: string, zipBuffer: Buffer): Promise<string> {
+  const path = onboardingZipTempPath(uploadId);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, zipBuffer);
+  return path;
+}
+
+export async function readPersistedZip(path: string): Promise<Buffer> {
+  return readFile(path);
+}

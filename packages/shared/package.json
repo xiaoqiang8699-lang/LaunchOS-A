@@ -1,0 +1,26 @@
+{
+  "name": "@launchos/shared",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "tsc -p tsconfig.json && node --test dist/queue.test.js dist/secret-redaction.test.js dist/secret-rotation.test.js dist/database-url.test.js dist/redis-url.test.js dist/database-provision.test.js dist/redis-provision.test.js dist/dependency.test.js dist/server-plan.test.js dist/server-provision.test.js dist/server-initialization.test.js dist/server-initialization-runtime.test.js dist/managed-deployment.test.js dist/runtime-recovery.test.js dist/worker-profile.test.js dist/managed-node-preflight.test.js dist/deployment-reliability.test.js dist/zip-intake.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "ioredis": "^5.11.1"
+  }
+}

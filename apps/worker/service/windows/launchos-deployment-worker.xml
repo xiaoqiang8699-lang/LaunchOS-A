@@ -1,0 +1,24 @@
+﻿<service>
+  <id>launchos-deployment-worker</id>
+  <name>LaunchOS Deployment Worker</name>
+  <description>LaunchOS managed-hosting deployment worker. Profile=deployment. Consumes deploymentQueue and systemCertQueue only.</description>
+  <executable>D:\Program Files (x86)\node\node.exe</executable>
+  <arguments>dist/main.js</arguments>
+  <workingdirectory>D:\launchos-zidonghua\apps\worker</workingdirectory>
+  <env name="WORKER_PROFILE" value="deployment" />
+  <env name="NODE_ENV" value="production" />
+  <env name="PATH" value="C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem;D:\Program Files (x86)\node" />
+  <env name="SystemRoot" value="C:\Windows" />
+  <logpath>D:\launchos-zidonghua\apps\worker\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="restart" delay="60 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>60 sec</stoptimeout>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+</service>

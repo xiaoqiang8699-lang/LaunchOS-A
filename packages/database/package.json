@@ -1,0 +1,39 @@
+{
+  "name": "@launchos/database",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../scripts/prisma-run.mjs generate && tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "db:generate": "node ../../scripts/prisma-run.mjs generate",
+    "db:migrate": "node ../../scripts/prisma-run.mjs migrate deploy",
+    "db:migrate:dev": "node ../../scripts/prisma-run.mjs migrate dev",
+    "db:migrate:deploy": "node ../../scripts/prisma-run.mjs migrate deploy",
+    "db:seed": "node ../../scripts/prisma-run.mjs db seed",
+    "db:verify": "tsx --env-file=.env prisma/verify.ts",
+    "db:up": "node scripts/local-postgres.mjs"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "embedded-postgres": "18.4.0-beta.17",
+    "eslint": "^9.36.0",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

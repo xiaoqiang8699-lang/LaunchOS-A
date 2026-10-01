@@ -1,0 +1,121 @@
+﻿{
+  "step": "Step 29 Phase 1 Gateway Engineering + Dry-run",
+  "projectId": "cmu3j24mv0001ri7wcsoa30hj",
+  "serverInstanceId": "cmub78pz001sdripco5pexhdz",
+  "publicIp": "116.62.198.184",
+  "gatewayRuntime": "unknown",
+  "gatewayVersion": null,
+  "gatewayRunning": false,
+  "gatewayConfigRoot": null,
+  "publicPortsListening": [
+    22
+  ],
+  "webHostname": "web-launchos.zsaos.com",
+  "webTarget": {
+    "host": "127.0.0.1",
+    "port": 39001,
+    "healthPath": "/"
+  },
+  "webTargetPort": 39001,
+  "webRouteValid": true,
+  "apiHostname": "api-launchos.zsaos.com",
+  "apiTarget": {
+    "host": "127.0.0.1",
+    "port": 39000,
+    "healthPath": "/health"
+  },
+  "apiTargetPort": 39000,
+  "apiRouteValid": true,
+  "dnsProvider": "ALIYUN_DNS",
+  "dnsAccountReady": true,
+  "dnsAccountId": "cmu2b5fx90002ri3kioyvjior",
+  "dnsAccountStatus": "VERIFIED",
+  "wildcardDnsPresent": false,
+  "webDnsChangeRequired": true,
+  "apiDnsChangeRequired": true,
+  "webDnsPlan": {
+    "hostname": "web-launchos.zsaos.com",
+    "type": "A",
+    "plannedRecord": "116.62.198.184",
+    "existingRecord": null
+  },
+  "apiDnsPlan": {
+    "hostname": "api-launchos.zsaos.com",
+    "type": "A",
+    "plannedRecord": "116.62.198.184",
+    "existingRecord": null
+  },
+  "certificateReuse": true,
+  "certificateValid": true,
+  "certificatePresentOnServer": false,
+  "coversWebHostname": true,
+  "coversApiHostname": true,
+  "certificate": {
+    "certificateId": "cmu288s0z0000ri40kdli7cd3",
+    "commonName": "*.zsaos.com",
+    "SANs": [
+      "*.zsaos.com"
+    ],
+    "notBefore": null,
+    "notAfter": "2026-12-14T23:59:59.000Z"
+  },
+  "httpsRedirectPlanned": true,
+  "webApiConfigMode": "BUILD_TIME",
+  "webApiConfigKey": "NEXT_PUBLIC_API_URL",
+  "publicConfigOnly": true,
+  "webApiPublicUrlPlanned": "https://api-launchos.zsaos.com",
+  "webRebuildRequiredForApiUrl": true,
+  "securityGroupChangeRequired": false,
+  "dynamicPortsRemainPrivate": true,
+  "dynamicPortProbes": [
+    {
+      "port": 39000,
+      "status": "filtered",
+      "code": null,
+      "ms": 2515
+    },
+    {
+      "port": 39001,
+      "status": "filtered",
+      "code": null,
+      "ms": 2513
+    }
+  ],
+  "accessEntryStatus": "ACCESS_ENTRY_PENDING",
+  "expectedHealthChecks": [
+    {
+      "url": "https://web-launchos.zsaos.com/",
+      "expectStatus": "200"
+    },
+    {
+      "url": "https://api-launchos.zsaos.com/health",
+      "expectStatus": "200"
+    }
+  ],
+  "gatewayConfigGenerated": {
+    "webHasRedirect": true,
+    "apiHasRedirect": true,
+    "webProxyPass": "http://127.0.0.1:39001",
+    "apiProxyPass": "http://127.0.0.1:39000"
+  },
+  "canConfigureGateway": true,
+  "blockers": [
+    {
+      "code": "CERT_INSTALL_PENDING",
+      "message": "system wildcard cert reusable but not present on this managed ECS yet"
+    },
+    {
+      "code": "GATEWAY_RUNTIME_PENDING",
+      "message": "nginx/gateway not running on managed ECS yet (detect-only)"
+    },
+    {
+      "code": "PUBLIC_ENTRY_PORTS_PENDING",
+      "message": "80/443 not listening yet on managed ECS (plan only)"
+    }
+  ],
+  "WRITE_COMMANDS_EXECUTED_THIS_RUN": false,
+  "oldServerUntouched": true,
+  "note": "Phase 1 dry-run only 鈥?no nginx/DNS/cert/env writes"
+}
+
+DRY_RUN complete. WRITE_COMMANDS_EXECUTED_THIS_RUN=false

@@ -1,0 +1,33 @@
+# LaunchOS Alpha control-plane Web (linux/amd64)
+FROM node:20-bookworm AS build
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY apps/gateway/package.json apps/gateway/
+COPY packages ./packages
+COPY scripts ./scripts
+COPY turbo.json ./
+ARG NEXT_PUBLIC_API_URL=https://api-alpha.zsaos.com
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm install --frozen-lockfile
+COPY apps ./apps
+COPY tsconfig.json ./
+ENV NODE_ENV=production
+RUN pnpm --filter @launchos/web build
+
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+# Alpha Web contract: container always listens 0.0.0.0:3000; host port is mapped by platform.
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+EXPOSE 3000
+CMD ["node", "apps/web/server.js"]

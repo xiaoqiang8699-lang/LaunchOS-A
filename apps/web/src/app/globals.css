@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+:root {
+  /* LaunchOS Control Center tokens (UX-1) */
+  --los-page: #f7f7f8;
+  --los-card: #ffffff;
+  --los-border: #e7e7ea;
+  --los-text: #161616;
+  --los-secondary: #71717a;
+  --los-muted: #a1a1aa;
+  --los-action: #18181b;
+  --los-action-hover: #27272a;
+  --los-sidebar: #ffffff;
+  --los-sidebar-active: #f4f4f5;
+  --los-success: #15803d;
+  --los-success-bg: #ecfdf5;
+  --los-warning: #a16207;
+  --los-warning-bg: #fefce8;
+  --los-error: #b91c1c;
+  --los-error-bg: #fef2f2;
+  --los-info: #1d4ed8;
+  --los-info-bg: #eff6ff;
+  --los-neutral: #52525b;
+  --los-neutral-bg: #f4f4f5;
+  --background: var(--los-page);
+  --foreground: var(--los-text);
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-los-page: var(--los-page);
+  --color-los-card: var(--los-card);
+  --color-los-border: var(--los-border);
+  --color-los-text: var(--los-text);
+  --color-los-secondary: var(--los-secondary);
+  --color-los-muted: var(--los-muted);
+  --color-los-action: var(--los-action);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+body {
+  background: var(--los-page);
+  color: var(--los-text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+*:focus-visible {
+  outline: 2px solid #3f3f46;
+  outline-offset: 2px;
+}

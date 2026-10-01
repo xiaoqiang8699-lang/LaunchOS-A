@@ -1,0 +1,29 @@
+# LaunchOS Alpha deployment worker (linux/amd64) — host network to reach loopback Redis/PG
+FROM node:20-bookworm AS build
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY apps/gateway/package.json apps/gateway/
+COPY packages ./packages
+COPY scripts ./scripts
+COPY turbo.json ./
+RUN pnpm install --frozen-lockfile
+COPY apps ./apps
+COPY tsconfig.json ./
+ENV NODE_ENV=production
+RUN pnpm --filter @launchos/database exec prisma generate \
+  && pnpm --filter @launchos/worker... build
+
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV WORKER_PROFILE=deployment
+# docker-cli talks to host podman via mounted docker.sock (Alpha colocated builder).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates git docker.io \
+  && rm -rf /var/lib/apt/lists/* \
+  && (command -v docker >/dev/null)
+COPY --from=build /app /app
+CMD ["node", "apps/worker/dist/main.js"]

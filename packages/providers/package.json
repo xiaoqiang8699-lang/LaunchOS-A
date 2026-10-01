@@ -1,0 +1,32 @@
+{
+  "name": "@launchos/providers",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "tsc -p tsconfig.json && node --test dist/aliyun/alibaba-cloud-capability-service.test.js dist/aliyun/rds-response-normalize.test.js dist/aliyun/redis-response-normalize.test.js dist/aliyun/redis-available-resource.test.js dist/aliyun/alibaba-cloud-redis-provider.test.js dist/alipay/alipay-payment-provider.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.1",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "@alicloud/bssopenapi20171214": "^4.1.1",
+    "@alicloud/ecs20140526": "^7.11.4",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/openapi-core": "^1.0.8",
+    "@alicloud/r-kvstore20150101": "^5.0.0",
+    "@alicloud/rds20140815": "^15.9.0",
+    "@alicloud/tea-util": "^1.4.11"
+  }
+}

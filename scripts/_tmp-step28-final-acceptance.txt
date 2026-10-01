@@ -1,0 +1,421 @@
+﻿{
+  "title": "Step 28 Final Acceptance",
+  "WRITE_COMMANDS_EXECUTED_THIS_RUN": false,
+  "projectId": "cmu3j24mv0001ri7wcsoa30hj",
+  "serverInstanceId": "cmub78pz001sdripco5pexhdz",
+  "publicIp": "116.62.198.184",
+  "apiUnitId": "cmu3j272x0005ri7wlxlbajeu",
+  "apiDeploymentId": "cmuc665xu000jriag1hjo6e4t",
+  "apiServiceInstance": "cmuc66642002hritk6h3cbwhe",
+  "apiRuntimePort": 39000,
+  "apiHealth": "HEALTHY",
+  "apiStatus": "RUNNING",
+  "webUnitId": "cmu3j27340007ri7wcno1xrai",
+  "webDeploymentId": "cmuc8ripi0015riagoflj5vdi",
+  "webDeploymentStatus": "SUCCESS",
+  "webQueueJobState": "completed",
+  "webAllStepsTerminal": true,
+  "webBusinessStateConsistent": true,
+  "jobFinishedOn": 1790055427622,
+  "webServiceInstance": "cmuc8riut02mdritki9f21jsl",
+  "webRuntimePort": 39001,
+  "webHealth": "HEALTHY",
+  "webStatus": "RUNNING",
+  "apiContainerId": "cc8a6809c751",
+  "apiContainerName": "launchos-cmuc665xu0",
+  "apiContainerState": "running",
+  "webContainerId": "564868d411ab",
+  "webContainerName": "launchos-cmuc8ripi0",
+  "webContainerState": "running",
+  "portConflict": false,
+  "bindIsolation": true,
+  "bindAddress": "127.0.0.1",
+  "apiPublish": "127.0.0.1:39000->3000",
+  "webPublish": "127.0.0.1:39001->80",
+  "apiHealthCheck": true,
+  "apiHealthHttpStatus": 200,
+  "webHealthCheck": true,
+  "webHealthHttpStatus": 200,
+  "webHealthPath": "/",
+  "webHealthPathSource": "ROOT_FALLBACK",
+  "apiPreserved": true,
+  "unitIsolation": true,
+  "webSecretIsolation": true,
+  "allowedRuntimeKeys": [
+    "HOME",
+    "HOST",
+    "HOSTNAME",
+    "NODE_ENV",
+    "NODE_VERSION",
+    "PATH",
+    "PORT",
+    "SENTRY_DSN",
+    "YARN_VERSION",
+    "container"
+  ],
+  "blockedBackendSecretKeysPresent": [],
+  "dependencyIsolation": true,
+  "apiPostgresql": "CONNECTED",
+  "apiRedis": "CONNECTED",
+  "webPostgresql": "NOT_REQUIRED",
+  "webRedis": "NOT_REQUIRED",
+  "webSourceArtifactId": "cmu3scwr3016fri3c35ryb3y2",
+  "webDeployableArtifactId": "cmuc6x7hd0001ri10yvj0rr6o",
+  "webDeployableArtifactType": "DOCKER_IMAGE",
+  "imageChecksumMatch": true,
+  "architectureCompatible": true,
+  "imageArchitecture": "amd64",
+  "serverArchitecture": "x86_64",
+  "remoteBuildRequired": false,
+  "remoteRegistryPullRequired": false,
+  "runtimePullPolicy": "never",
+  "registryIndependent": true,
+  "dynamicPublicExposure": false,
+  "publicProbesSample": [
+    {
+      "host": "116.62.198.184",
+      "port": 39000,
+      "status": "filtered",
+      "code": null,
+      "ms": 2510
+    },
+    {
+      "host": "116.62.198.184",
+      "port": 39001,
+      "status": "filtered",
+      "code": null,
+      "ms": 2505
+    },
+    {
+      "host": "116.62.198.184",
+      "port": 3000,
+      "status": "filtered",
+      "code": null,
+      "ms": 2510
+    },
+    {
+      "host": "116.62.198.184",
+      "port": 80,
+      "status": "refused",
+      "code": "ECONNREFUSED",
+      "ms": 2144
+    }
+  ],
+  "accessEntryStatus": "ACCESS_ENTRY_PENDING",
+  "accessEntryUserMessage": "搴旂敤宸茶繍琛岋紝姝ｅ湪绛夊緟璁块棶鍏ュ彛閰嶇疆",
+  "secretScan": {
+    "databaseUrlPlaintextHits": 0,
+    "redisUrlPlaintextHits": 0,
+    "jwtSecretPlaintextHits": 0,
+    "sshPasswordPlaintextHits": 0,
+    "aliyunAkPlaintextHits": 0,
+    "aliyunSkPlaintextHits": 0,
+    "secretScanPassed": true
+  },
+  "failedHistoryPreserved": true,
+  "failedHistory": [
+    {
+      "id": "cmuc53f9f000jriqg7r4kqhm6",
+      "status": "FAILED"
+    },
+    {
+      "id": "cmuc3rucy000jri6gbnhqf96x",
+      "status": "FAILED"
+    }
+  ],
+  "oldServerUntouched": true,
+  "steps": [
+    {
+      "stepKey": "VALIDATE_SOURCE",
+      "status": "SKIPPED",
+      "finishedAt": "2026-09-22T05:36:35.254Z",
+      "errorMessage": null
+    },
+    {
+      "stepKey": "BUILD_APPLICATION",
+      "status": "SKIPPED",
+      "finishedAt": "2026-09-22T05:36:35.279Z",
+      "errorMessage": null
+    },
+    {
+      "stepKey": "STORE_ARTIFACT",
+      "status": "SUCCESS",
+      "finishedAt": "2026-09-22T05:36:35.310Z",
+      "errorMessage": null
+    },
+    {
+      "stepKey": "DEPLOY_APPLICATION",
+      "status": "SKIPPED",
+      "finishedAt": "2026-09-22T05:36:35.328Z",
+      "errorMessage": null
+    },
+    {
+      "stepKey": "REMOTE_DEPLOY",
+      "status": "SUCCESS",
+      "finishedAt": "2026-09-22T05:37:06.111Z",
+      "errorMessage": null
+    },
+    {
+      "stepKey": "HEALTH_CHECK",
+      "status": "SUCCESS",
+      "finishedAt": "2026-09-22T05:37:07.598Z",
+      "errorMessage": null
+    }
+  ],
+  "remoteDeployments": [],
+  "acceptanceCriteria": {
+    "apiRunningHealthy": true,
+    "webRunningHealthy": true,
+    "portsDifferent": true,
+    "bindLoopback": true,
+    "dynamicPublicExposureFalse": true,
+    "webSecretIsolation": true,
+    "dependencyIsolation": true,
+    "registryIndependent": true,
+    "apiPreserved": true
+  },
+  "checks": [
+    {
+      "name": "web_deployment_success",
+      "ok": true,
+      "detail": "SUCCESS"
+    },
+    {
+      "name": "web_job_completed",
+      "ok": true,
+      "detail": "completed"
+    },
+    {
+      "name": "web_all_steps_terminal",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "web_business_job_consistent",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "web_unit_bound",
+      "ok": true,
+      "detail": "cmu3j27340007ri7wcno1xrai"
+    },
+    {
+      "name": "server_bound",
+      "ok": true,
+      "detail": "cmub78pz001sdripco5pexhdz"
+    },
+    {
+      "name": "source_artifact",
+      "ok": true,
+      "detail": "cmu3scwr3016fri3c35ryb3y2"
+    },
+    {
+      "name": "deployable_artifact",
+      "ok": true,
+      "detail": "cmuc6x7hd0001ri10yvj0rr6o:DOCKER_IMAGE"
+    },
+    {
+      "name": "api_si_healthy",
+      "ok": true,
+      "detail": "cmuc66642002hritk6h3cbwhe"
+    },
+    {
+      "name": "web_si_healthy",
+      "ok": true,
+      "detail": "cmuc8riut02mdritki9f21jsl"
+    },
+    {
+      "name": "ports_different",
+      "ok": true,
+      "detail": {
+        "apiRuntimePort": 39000,
+        "webRuntimePort": 39001
+      }
+    },
+    {
+      "name": "api_container_running",
+      "ok": true,
+      "detail": {
+        "id": "cc8a6809c751",
+        "name": "launchos-cmuc665xu0",
+        "state": "running"
+      }
+    },
+    {
+      "name": "web_container_running",
+      "ok": true,
+      "detail": {
+        "id": "564868d411ab",
+        "name": "launchos-cmuc8ripi0",
+        "state": "running"
+      }
+    },
+    {
+      "name": "containers_distinct",
+      "ok": true,
+      "detail": {
+        "api": {
+          "id": "cc8a6809c751",
+          "name": "launchos-cmuc665xu0"
+        },
+        "web": {
+          "id": "564868d411ab",
+          "name": "launchos-cmuc8ripi0"
+        }
+      }
+    },
+    {
+      "name": "web_port_range",
+      "ok": true,
+      "detail": 39001
+    },
+    {
+      "name": "api_maps_3000",
+      "ok": true,
+      "detail": "127.0.0.1:39000->3000/tcp"
+    },
+    {
+      "name": "web_maps_80",
+      "ok": true,
+      "detail": "127.0.0.1:39001->80/tcp"
+    },
+    {
+      "name": "port_conflict_false",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "bind_isolation",
+      "ok": true,
+      "detail": "LISTEN 0      4096       127.0.0.1:39001      0.0.0.0:*    users:((\"conmon\",pid=69251,fd=5))                       \nLISTEN 0      4096       127.0.0.1:39000      0.0.0.0:*    users:((\"conmon\",pid=50691,fd=5))"
+    },
+    {
+      "name": "api_health_check",
+      "ok": true,
+      "detail": 200
+    },
+    {
+      "name": "web_health_check",
+      "ok": true,
+      "detail": {
+        "status": 200,
+        "path": "/",
+        "source": "ROOT_FALLBACK"
+      }
+    },
+    {
+      "name": "api_preserved",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "web_secret_isolation",
+      "ok": true,
+      "detail": {
+        "allowedRuntimeKeys": [
+          "HOME",
+          "HOST",
+          "HOSTNAME",
+          "NODE_ENV",
+          "NODE_VERSION",
+          "PATH",
+          "PORT",
+          "SENTRY_DSN",
+          "YARN_VERSION",
+          "container"
+        ],
+        "blockedBackendSecretKeysPresent": []
+      }
+    },
+    {
+      "name": "dependency_isolation",
+      "ok": true,
+      "detail": {
+        "apiPostgresql": "CONNECTED",
+        "apiRedis": "CONNECTED",
+        "webPostgresql": "NOT_REQUIRED",
+        "webRedis": "NOT_REQUIRED"
+      }
+    },
+    {
+      "name": "checksum_match",
+      "ok": true,
+      "detail": "present"
+    },
+    {
+      "name": "arch_compatible",
+      "ok": true,
+      "detail": "amd64/x86_64"
+    },
+    {
+      "name": "registry_independent",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "dynamic_public_exposure_false",
+      "ok": true,
+      "detail": [
+        {
+          "host": "116.62.198.184",
+          "port": 39000,
+          "status": "filtered",
+          "code": null,
+          "ms": 2510
+        },
+        {
+          "host": "116.62.198.184",
+          "port": 39001,
+          "status": "filtered",
+          "code": null,
+          "ms": 2505
+        }
+      ]
+    },
+    {
+      "name": "unit_isolation",
+      "ok": true,
+      "detail": {
+        "apiDeploymentId": "cmuc665xu000jriag1hjo6e4t",
+        "webDeploymentId": "cmuc8ripi0015riagoflj5vdi",
+        "apiSi": "cmuc66642002hritk6h3cbwhe",
+        "webSi": "cmuc8riut02mdritki9f21jsl",
+        "dirs": "/opt/launchos/cmuc665xu000jriag1hjo6e4t\n/opt/launchos/cmuc8ripi0015riagoflj5vdi"
+      }
+    },
+    {
+      "name": "failed_history_preserved",
+      "ok": true,
+      "detail": [
+        {
+          "id": "cmuc53f9f000jriqg7r4kqhm6",
+          "status": "FAILED"
+        },
+        {
+          "id": "cmuc3rucy000jri6gbnhqf96x",
+          "status": "FAILED"
+        }
+      ]
+    },
+    {
+      "name": "old_server_untouched",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "secret_scan",
+      "ok": true,
+      "detail": {
+        "databaseUrlPlaintextHits": 0,
+        "redisUrlPlaintextHits": 0,
+        "jwtSecretPlaintextHits": 0,
+        "sshPasswordPlaintextHits": 0,
+        "aliyunAkPlaintextHits": 0,
+        "aliyunSkPlaintextHits": 0
+      }
+    }
+  ],
+  "allPassed": true,
+  "acceptanceLine": "Step 28 Multi-Unit Managed Deployment 楠屾敹瀹屾垚銆?
+}

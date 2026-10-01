@@ -1,0 +1,320 @@
+﻿{
+  "projects": [
+    {
+      "id": "cmu14xu5g000xri8s8uhmg3i8",
+      "name": "Xiaoqiang-APP",
+      "framework": null,
+      "sources": [
+        {
+          "url": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+          "branch": "master",
+          "isPrivate": false
+        }
+      ],
+      "projectAnalyses": [],
+      "deployments": [
+        {
+          "id": "cmu14xzif001bri8sm57bvkbp",
+          "status": "SUCCESS",
+          "errorMessage": null,
+          "startedAt": "2026-09-14T11:04:10.538Z",
+          "uploadStatus": "IDLE",
+          "uploadStartedAt": null,
+          "uploadFinishedAt": null,
+          "steps": [
+            {
+              "stepKey": "VALIDATE_SOURCE",
+              "name": "Validate Source",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-14T11:04:10.547Z",
+              "finishedAt": "2026-09-14T11:04:12.573Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "BUILD_APPLICATION",
+              "name": "Build Application",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-14T11:04:12.579Z",
+              "finishedAt": "2026-09-14T11:04:13.752Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "STORE_ARTIFACT",
+              "name": "Store Artifact",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-14T11:04:13.763Z",
+              "finishedAt": "2026-09-14T11:04:13.802Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "DEPLOY_APPLICATION",
+              "name": "Deploy Application",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-14T11:04:13.809Z",
+              "finishedAt": "2026-09-14T11:04:14.150Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "REMOTE_DEPLOY",
+              "name": "Remote Deploy",
+              "status": "SKIPPED",
+              "startedAt": "2026-09-14T11:04:14.154Z",
+              "finishedAt": "2026-09-14T11:04:14.169Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "HEALTH_CHECK",
+              "name": "Health Check",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-14T11:04:14.174Z",
+              "finishedAt": "2026-09-14T11:04:16.191Z",
+              "errorMessage": null
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "cmu14y214001yri904j4848xx",
+              "type": "BUILD_OUTPUT",
+              "status": "READY",
+              "size": 2560,
+              "storagePath": "launchos-artifacts/deployments/cmu14xzif001bri8sm57bvkbp/build-output.tar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cmu21lk8a0001ri6wlyc7q1jn",
+      "name": "Xiaoqiang-APP",
+      "framework": "NODE",
+      "sources": [
+        {
+          "url": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+          "branch": "master",
+          "isPrivate": false
+        }
+      ],
+      "projectAnalyses": [
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T03:11:06.025Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu21lk8a0001ri6wlyc7q1jn"
+        },
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T02:58:40.545Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu21lk8a0001ri6wlyc7q1jn"
+        },
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T02:51:12.819Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu21lk8a0001ri6wlyc7q1jn"
+        }
+      ],
+      "deployments": [
+        {
+          "id": "cmu22hrxd000fri6w6oifjv7h",
+          "status": "FAILED",
+          "errorMessage": "Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.\nResolved \"node\" as an alias (/etc/containers/registries.conf.d/000-shortnames.conf)\nTrying to pull docker.io/library/node:20-alpine...\ntime=\"2026-09-15T11:19:10+08:00\" level=warning msg=\"Failed, retrying in 2s ... (1/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 157.240.0.18:443: i/o timeout\"\ntime=\"2026-09-15T11:20:12+08:00\" level=warning msg=\"Failed, retrying in 2s ... (2/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 43.226.16.8:443: i/o timeout\"\ntime=\"2026-09-15T11:21:14+08:00\" level=warning msg=\"Failed, retrying in 2s ... (3/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 108.160.169.178:443: i/o timeout\"\nError: creating build container: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \"https://registry-1.docker.io/v2/\": dial tcp 108.160.162.109:443: i/o timeout",
+          "startedAt": "2026-09-15T03:10:51.298Z",
+          "uploadStatus": "COMPLETED",
+          "uploadStartedAt": "2026-09-15T03:18:09.819Z",
+          "uploadFinishedAt": "2026-09-15T03:18:10.694Z",
+          "steps": [
+            {
+              "stepKey": "VALIDATE_SOURCE",
+              "name": "Validate Source",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-15T03:10:51.308Z",
+              "finishedAt": "2026-09-15T03:11:06.034Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "BUILD_APPLICATION",
+              "name": "Build Application",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-15T03:11:06.040Z",
+              "finishedAt": "2026-09-15T03:18:05.485Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "STORE_ARTIFACT",
+              "name": "Store Artifact",
+              "status": "SUCCESS",
+              "startedAt": "2026-09-15T03:18:05.496Z",
+              "finishedAt": "2026-09-15T03:18:09.519Z",
+              "errorMessage": null
+            },
+            {
+              "stepKey": "DEPLOY_APPLICATION",
+              "name": "Deploy Application",
+              "status": "FAILED",
+              "startedAt": "2026-09-15T03:18:09.523Z",
+              "finishedAt": "2026-09-15T03:22:17.165Z",
+              "errorMessage": "Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.\nResolved \"node\" as an alias (/etc/containers/registries.conf.d/000-shortnames.conf)\nTrying to pull docker.io/library/node:20-alpine...\ntime=\"2026-09-15T11:19:10+08:00\" level=warning msg=\"Failed, retrying in 2s ... (1/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 157.240.0.18:443: i/o timeout\"\ntime=\"2026-09-15T11:20:12+08:00\" level=warning msg=\"Failed, retrying in 2s ... (2/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 43.226.16.8:443: i/o timeout\"\ntime=\"2026-09-15T11:21:14+08:00\" level=warning msg=\"Failed, retrying in 2s ... (3/3). Error: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \\\"https://registry-1.docker.io/v2/\\\": dial tcp 108.160.169.178:443: i/o timeout\"\nError: creating build container: initializing source docker://node:20-alpine: pinging container registry registry-1.docker.io: Get \"https://registry-1.docker.io/v2/\": dial tcp 108.160.162.109:443: i/o timeout"
+            },
+            {
+              "stepKey": "REMOTE_DEPLOY",
+              "name": "Remote Deploy",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "HEALTH_CHECK",
+              "name": "Health Check",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "cmu23qg8x002prilg7qrd4og4",
+              "type": "BUILD_OUTPUT",
+              "status": "READY",
+              "size": 341381632,
+              "storagePath": "launchos-artifacts/deployments/cmu22hrxd000fri6w6oifjv7h/build-output.tar"
+            },
+            {
+              "id": "cmu230zcl00ffrihcap4n1pdg",
+              "type": "BUILD_OUTPUT",
+              "status": "READY",
+              "size": 341381632,
+              "storagePath": "launchos-artifacts/deployments/cmu22hrxd000fri6w6oifjv7h/build-output.tar"
+            },
+            {
+              "id": "cmu22rgqd00cbrihcrew8ihr8",
+              "type": "BUILD_OUTPUT",
+              "status": "READY",
+              "size": 341381632,
+              "storagePath": "launchos-artifacts/deployments/cmu22hrxd000fri6w6oifjv7h/build-output.tar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cmu2k41dl0003ri68hbbyud0w",
+      "name": "鐓у瀷APP",
+      "framework": "NODE",
+      "sources": [
+        {
+          "url": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+          "branch": "master",
+          "isPrivate": false
+        }
+      ],
+      "projectAnalyses": [
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T11:15:07.008Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu2k41dl0003ri68hbbyud0w"
+        },
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T11:07:05.641Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu2k41dl0003ri68hbbyud0w"
+        },
+        {
+          "framework": "NODE",
+          "confidence": 0.7,
+          "createdAt": "2026-09-15T10:57:10.224Z",
+          "repositoryPath": "C:\\Users\\鏌犺湝\\AppData\\Local\\Temp\\launchos-repos\\cmu2k41dl0003ri68hbbyud0w"
+        }
+      ],
+      "deployments": [
+        {
+          "id": "cmu2k4ph6000fri68124rf9xs",
+          "status": "RUNNING",
+          "errorMessage": null,
+          "startedAt": "2026-09-15T11:21:28.432Z",
+          "uploadStatus": "COMPLETED",
+          "uploadStartedAt": "2026-09-15T11:04:40.868Z",
+          "uploadFinishedAt": "2026-09-15T11:14:01.011Z",
+          "steps": [
+            {
+              "stepKey": "VALIDATE_SOURCE",
+              "name": "Validate Source",
+              "status": "RUNNING",
+              "startedAt": "2026-09-15T11:21:28.444Z",
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "BUILD_APPLICATION",
+              "name": "Build Application",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "STORE_ARTIFACT",
+              "name": "Store Artifact",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "DEPLOY_APPLICATION",
+              "name": "Deploy Application",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "REMOTE_DEPLOY",
+              "name": "Remote Deploy",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            },
+            {
+              "stepKey": "HEALTH_CHECK",
+              "name": "Health Check",
+              "status": "PENDING",
+              "startedAt": null,
+              "finishedAt": null,
+              "errorMessage": null
+            }
+          ],
+          "artifacts": [
+            {
+              "id": "cmu2kqlcp00xzri10plcv9nl8",
+              "type": "DOCKER_IMAGE",
+              "status": "READY",
+              "size": 0,
+              "storagePath": "launchos/cmu2k41dl000:cmu2k4ph6000"
+            },
+            {
+              "id": "cmu2kqe0h00wzri10r1y7j4ma",
+              "type": "BUILD_OUTPUT",
+              "status": "READY",
+              "size": 341381632,
+              "storagePath": "launchos-artifacts/deployments/cmu2k4ph6000fri68124rf9xs/build-output.tar"
+            },
+            {
+              "id": "cmu2kgax200pnri103f4q05p4",
+              "type": "DOCKER_IMAGE",
+              "status": "READY",
+              "size": 0,
+              "storagePath": "launchos/cmu2k41dl000:cmu2k4ph6000"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+FAILED deployment cmu2k4ph6000fri68124rf9xs

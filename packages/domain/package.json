@@ -1,0 +1,30 @@
+{
+  "name": "@launchos/domain",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "test": "tsc -p tsconfig.json && node --test dist/cert-renewal.test.js dist/api-permission.test.js dist/gateway-access.test.js dist/public-entry-phase2.test.js dist/dns-activation.test.js dist/launch-orchestrator.test.js dist/launch-executor.test.js dist/launch-phase3.test.js dist/launch-phase4.test.js dist/launch-product-execute.test.js dist/alpha-test-session.test.js dist/first-login-onboarding.test.js dist/control-plane.test.js dist/admin-user-management.test.js dist/workspace-admin.test.js dist/subscription-usage.test.js dist/subscription-operations.test.js dist/pricing-packaging.test.js dist/commercial-readiness.test.js dist/payment-readiness.test.js dist/alipay-readiness.test.js dist/managed-gateway-route.test.js dist/deployment-failure-presentation.test.js dist/plan-entitlements.test.js"
+  },
+  "dependencies": {
+    "@alicloud/alidns20150109": "^4.6.1",
+    "@alicloud/openapi-client": "^0.4.15",
+    "@launchos/database": "workspace:*",
+    "@launchos/remote-runner": "workspace:*",
+    "@launchos/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "eslint": "^9.36.0",
+    "typescript": "^5.9.2"
+  }
+}

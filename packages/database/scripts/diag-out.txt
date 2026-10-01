@@ -1,0 +1,261 @@
+﻿PROJECTS [
+  {
+    "id": "cmu14xu5g000xri8s8uhmg3i8",
+    "name": "Xiaoqiang-APP",
+    "slug": "xiaoqiang-app",
+    "applicationPurpose": "WEBSITE",
+    "framework": null,
+    "defaultBranch": "master",
+    "sourceUrl": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+    "repositoryUrl": null
+  },
+  {
+    "id": "cmu21lk8a0001ri6wlyc7q1jn",
+    "name": "Xiaoqiang-APP",
+    "slug": "xiaoqiang-app-2",
+    "applicationPurpose": "WEBSITE",
+    "framework": "NODE",
+    "defaultBranch": "master",
+    "sourceUrl": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+    "repositoryUrl": null
+  }
+]
+TARGET {
+  "id": "cmu14xu5g000xri8s8uhmg3i8",
+  "name": "Xiaoqiang-APP",
+  "slug": "xiaoqiang-app",
+  "applicationPurpose": "WEBSITE",
+  "framework": null,
+  "defaultBranch": "master",
+  "sourceUrl": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+  "repositoryUrl": null
+}
+SOURCES [
+  {
+    "id": "cmu14xu5j000zri8skj2c6hhi",
+    "projectId": "cmu14xu5g000xri8s8uhmg3i8",
+    "type": "GITHUB",
+    "url": "https://github.com/xiaoqiang8699-lang/Xiaoqiang-APP.git",
+    "branch": "master",
+    "connectionId": null,
+    "providerRepositoryId": null,
+    "fullName": null,
+    "isPrivate": false,
+    "authStatus": "OK",
+    "createdAt": "2026-09-14T11:04:03.560Z",
+    "updatedAt": "2026-09-14T11:04:03.560Z"
+  }
+]
+ANALYSES []
+REPO_SCAN_PATH C:\Users\鏌犺湝\AppData\Local\Temp\launchos-repos\cmu14xu5g000xri8s8uhmg3i8
+REPO_SCAN {
+  "missing": true,
+  "signals": {
+    "packageJson": false,
+    "xcodeproj": false,
+    "xcworkspace": false,
+    "podfile": false,
+    "packageSwift": false,
+    "infoPlist": false,
+    "iosDir": false,
+    "swiftCount": 0,
+    "sampleSwift": []
+  }
+}
+DEPS [
+  {
+    "id": "cmu14xzif001bri8sm57bvkbp",
+    "status": "SUCCESS",
+    "createdAt": "2026-09-14T11:04:10.503Z",
+    "startedAt": "2026-09-14T11:04:10.538Z",
+    "finishedAt": "2026-09-14T11:04:16.197Z",
+    "errorMessage": null,
+    "uploadStatus": "IDLE",
+    "uploadStartedAt": null,
+    "uploadFinishedAt": null,
+    "uploadError": null,
+    "steps": [
+      {
+        "key": "VALIDATE_SOURCE",
+        "name": "Validate Source",
+        "status": "SUCCESS",
+        "startedAt": "2026-09-14T11:04:10.547Z",
+        "finishedAt": "2026-09-14T11:04:12.573Z",
+        "errorMessage": null,
+        "duration": null
+      },
+      {
+        "key": "BUILD_APPLICATION",
+        "name": "Build Application",
+        "status": "SUCCESS",
+        "startedAt": "2026-09-14T11:04:12.579Z",
+        "finishedAt": "2026-09-14T11:04:13.752Z",
+        "errorMessage": null,
+        "duration": 999
+      },
+      {
+        "key": "STORE_ARTIFACT",
+        "name": "Store Artifact",
+        "status": "SUCCESS",
+        "startedAt": "2026-09-14T11:04:13.763Z",
+        "finishedAt": "2026-09-14T11:04:13.802Z",
+        "errorMessage": null,
+        "duration": 34
+      },
+      {
+        "key": "DEPLOY_APPLICATION",
+        "name": "Deploy Application",
+        "status": "SUCCESS",
+        "startedAt": "2026-09-14T11:04:13.809Z",
+        "finishedAt": "2026-09-14T11:04:14.150Z",
+        "errorMessage": null,
+        "duration": 336
+      },
+      {
+        "key": "REMOTE_DEPLOY",
+        "name": "Remote Deploy",
+        "status": "SKIPPED",
+        "startedAt": "2026-09-14T11:04:14.154Z",
+        "finishedAt": "2026-09-14T11:04:14.169Z",
+        "errorMessage": null,
+        "duration": 10
+      },
+      {
+        "key": "HEALTH_CHECK",
+        "name": "Health Check",
+        "status": "SUCCESS",
+        "startedAt": "2026-09-14T11:04:14.174Z",
+        "finishedAt": "2026-09-14T11:04:16.191Z",
+        "errorMessage": null,
+        "duration": 2013
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "cmu14y214001yri904j4848xx",
+        "size": 2560,
+        "status": "READY",
+        "type": "BUILD_OUTPUT",
+        "storagePath": "launchos-artifacts/deployments/cmu14xzif001bri8sm57bvkbp/build-output.tar"
+      }
+    ],
+    "remoteDeployments": [],
+    "recentLogs": [
+      {
+        "level": "info",
+        "message": "Health Check completed",
+        "createdAt": "2026-09-14T11:04:16.195Z"
+      },
+      {
+        "level": "info",
+        "message": "Health Check started",
+        "createdAt": "2026-09-14T11:04:14.177Z"
+      },
+      {
+        "level": "info",
+        "message": "Remote Deploy skipped (no RUNNING ECS with public IP)",
+        "createdAt": "2026-09-14T11:04:14.173Z"
+      },
+      {
+        "level": "info",
+        "message": "Remote Deploy started",
+        "createdAt": "2026-09-14T11:04:14.158Z"
+      },
+      {
+        "level": "info",
+        "message": "Deploy Application completed on port 32779",
+        "createdAt": "2026-09-14T11:04:14.153Z"
+      },
+      {
+        "level": "info",
+        "message": "Assigned system domain xiaoqiang-app.launchos.app",
+        "createdAt": "2026-09-14T11:04:14.149Z"
+      },
+      {
+        "level": "info",
+        "message": "Assigned domain xiaoqiang-app.launchos.local (ACTIVE) with certificate ACTIVE",
+        "createdAt": "2026-09-14T11:04:14.120Z"
+      },
+      {
+        "level": "info",
+        "message": "Runtime container created e636824db944db3edb9f3feadcc030ac534b195b8f88b89ce7b5837d9383df94",
+        "createdAt": "2026-09-14T11:04:14.088Z"
+      },
+      {
+        "level": "info",
+        "message": "Created ServiceInstance cmu14y22v002ari90l748nt3z (nodejs)",
+        "createdAt": "2026-09-14T11:04:13.836Z"
+      },
+      {
+        "level": "info",
+        "message": "Reading artifact cmu14y214001yri904j4848xx from launchos-artifacts/deployments/cmu14xzif001bri8sm57bvkbp/build-output.tar",
+        "createdAt": "2026-09-14T11:04:13.820Z"
+      },
+      {
+        "level": "info",
+        "message": "Deploy Application started",
+        "createdAt": "2026-09-14T11:04:13.812Z"
+      },
+      {
+        "level": "info",
+        "message": "Artifact READY (2560 bytes) at launchos-artifacts/deployments/cmu14xzif001bri8sm57bvkbp/build-output.tar",
+        "createdAt": "2026-09-14T11:04:13.807Z"
+      },
+      {
+        "level": "info",
+        "message": "Uploading artifact to MinIO: deployments/cmu14xzif001bri8sm57bvkbp/build-output.tar",
+        "createdAt": "2026-09-14T11:04:13.779Z"
+      },
+      {
+        "level": "info",
+        "message": "Artifact cmu14y214001yri904j4848xx created",
+        "createdAt": "2026-09-14T11:04:13.773Z"
+      },
+      {
+        "level": "info",
+        "message": "Store Artifact started",
+        "createdAt": "2026-09-14T11:04:13.766Z"
+      },
+      {
+        "level": "info",
+        "message": "Build Application completed",
+        "createdAt": "2026-09-14T11:04:13.762Z"
+      },
+      {
+        "level": "info",
+        "message": "Collected build output (2560 bytes)",
+        "createdAt": "2026-09-14T11:04:13.759Z"
+      },
+      {
+        "level": "info",
+        "message": "\nup to date, audited 1 package in 397ms\n\nfound 0 vulnerabilities\n\n\n> build\n> mkdir -p dist && cp server.js dist/index.js && echo wrote dist/index.js\n\nwrote dist/index.js\n",
+        "createdAt": "2026-09-14T11:04:13.757Z"
+      },
+      {
+        "level": "info",
+        "message": "Creating Node.js runner container (node:20)",
+        "createdAt": "2026-09-14T11:04:12.586Z"
+      },
+      {
+        "level": "info",
+        "message": "Build Application started",
+        "createdAt": "2026-09-14T11:04:12.583Z"
+      },
+      {
+        "level": "info",
+        "message": "Validate Source completed",
+        "createdAt": "2026-09-14T11:04:12.578Z"
+      },
+      {
+        "level": "info",
+        "message": "Validate Source started",
+        "createdAt": "2026-09-14T11:04:10.551Z"
+      },
+      {
+        "level": "info",
+        "message": "Deployment created and queued",
+        "createdAt": "2026-09-14T11:04:10.513Z"
+      }
+    ]
+  }
+]

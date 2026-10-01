@@ -1,0 +1,38 @@
+{
+  "name": "@launchos/worker",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "dev:deployment": "node scripts/run-profile.mjs deployment dev",
+    "dev:provisioning": "node scripts/run-profile.mjs provisioning dev",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:deployment": "node scripts/run-profile.mjs deployment start",
+    "start:provisioning": "node scripts/run-profile.mjs provisioning start",
+    "service:install": "powershell -NoProfile -ExecutionPolicy Bypass -File service/windows/install-scheduled-task.ps1",
+    "service:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File service/windows/uninstall-scheduled-task.ps1",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@launchos/database": "workspace:*",
+    "@launchos/deployment": "workspace:*",
+    "@launchos/domain": "workspace:*",
+    "@launchos/git": "workspace:*",
+    "@launchos/github": "workspace:*",
+    "@launchos/providers": "workspace:*",
+    "@launchos/remote-runner": "workspace:*",
+    "@launchos/runner": "workspace:*",
+    "@launchos/runtime": "workspace:*",
+    "@launchos/shared": "workspace:*",
+    "bullmq": "^5.61.0",
+    "dotenv": "^16.6.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "eslint": "^9.36.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

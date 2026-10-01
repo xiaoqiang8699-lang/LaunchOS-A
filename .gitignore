@@ -1,0 +1,62 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build
+dist
+build
+.next
+out
+.turbo
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Secrets / keys
+*.pem
+*.key
+.secrets/
+.env.alpha
+.env.alpha.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Test / coverage
+coverage
+.nyc_output
+
+# Prisma
+packages/database/generated
+
+# Worker Windows service binary (downloaded WinSW)
+apps/worker/service/windows/*.exe
+apps/worker/service/windows/*.err
+apps/worker/service/windows/*.out
+apps/worker/service/windows/*.wrapper.log
+apps/worker/.deployment-worker.lock
+.local
+
+# Local tooling / Alpha runtime artifacts (often contain credentials)
+.tools/
+.tmp/
+.tmp-*
+.temp/
+
+# Misc
+*.tsbuildinfo
+.eslintcache
+.cache

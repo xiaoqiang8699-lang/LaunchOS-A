@@ -1,0 +1,28 @@
+# LaunchOS Alpha control-plane API (linux/amd64)
+FROM node:20-bookworm AS build
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/api/package.json apps/api/
+COPY apps/web/package.json apps/web/
+COPY apps/worker/package.json apps/worker/
+COPY apps/gateway/package.json apps/gateway/
+COPY packages ./packages
+COPY scripts ./scripts
+COPY turbo.json ./
+RUN pnpm install --frozen-lockfile
+COPY apps ./apps
+COPY tsconfig.json ./
+ENV NODE_ENV=production
+RUN pnpm --filter @launchos/database exec prisma generate \
+  && pnpm --filter @launchos/api... build
+
+FROM node:20-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV API_PORT=39110
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates git \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=build /app /app
+EXPOSE 39110
+CMD ["node", "apps/api/dist/main.js"]

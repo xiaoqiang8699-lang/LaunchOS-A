@@ -1,0 +1,8 @@
+{
+  "name": "launchos-real-deploy-test-app",
+  "private": true,
+  "description": "REAL_DEPLOY_TEST_APP. Minimal HTTP app for LaunchOS managed hosting acceptance. Not a demo shortcut.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
