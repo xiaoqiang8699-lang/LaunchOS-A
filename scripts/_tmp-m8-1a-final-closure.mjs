@@ -1,0 +1,482 @@
+/**
+ * M8-1A final verify + optional close gate after SUCCEEDED payment.
+ * No new orders. No forge PAID.
+ * node scripts/_tmp-m8-1a-final-closure.mjs [--close-gate]
+ */
+import { createRequire } from 'node:module';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+for (const file of [resolve(root, '.env'), resolve(root, '.secrets/alpha-data-plane.env')]) {
+  if (!existsSync(file)) continue;
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#') || !t.includes('=')) continue;
+    const i = t.indexOf('=');
+    const k = t.slice(0, i).trim();
+    let v = t.slice(i + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+}
+
+const closeGate = process.argv.includes('--close-gate');
+const requireApi = createRequire(resolve(root, 'apps/api/package.json'));
+const { PrismaClient } = requireApi('@launchos/database');
+const { decryptCredential, resolveServerSshUsername, shellCommand } = requireApi('@launchos/shared');
+const { RemoteRunner } = requireApi('@launchos/remote-runner');
+
+const WS = 'cmunqotx500cbrl013xbhpio2';
+const TARGET_HOST = '116.62.198.184';
+const ARTIFACT = resolve(root, '.tools/alpha-runtime');
+mkdirSync(ARTIFACT, { recursive: true });
+const adminAuth = JSON.parse(readFileSync(join(ARTIFACT, 'admin-auth.json'), 'utf8'));
+const userAuth = JSON.parse(readFileSync(join(ARTIFACT, '1002-auth.json'), 'utf8'));
+
+function curl(url, host, opts = {}) {
+  const { method = 'GET', headers = {}, body = null, maxTime = '90' } = opts;
+  const args = ['-sS', '-L', '-X', method, '-w', '\n__STATUS__:%{http_code}', '--max-time', String(maxTime)];
+  args.push('--resolve', `${host}:443:${TARGET_HOST}`);
+  for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
+  if (body != null) args.push('-H', 'content-type: application/json', '--data-binary', body);
+  args.push(url);
+  const r = spawnSync('curl.exe', args, { encoding: 'utf8', maxBuffer: 8_000_000 });
+  const out = String(r.stdout || '');
+  const m = out.match(/\n__STATUS__:(\d+)/);
+  return { status: m ? Number(m[1]) : 0, text: m ? out.slice(0, m.index) : out };
+}
+function parse(text) {
+  try {
+    return JSON.parse(text || '{}');
+  } catch {
+    return {};
+  }
+}
+
+const prisma = new PrismaClient();
+const server = await prisma.serverInstance.findFirst({ where: { id: 'cmuma9i480001rij49yv4yw2q' } });
+const runner = new RemoteRunner();
+await runner.connect({
+  host: server.host,
+  port: server.port,
+  username: resolveServerSshUsername({ serverUsername: server.username, provider: server.provider }),
+  password: decryptCredential(server.credentialEncrypted),
+  readyTimeoutMs: 30000,
+});
+async function remoteOk(cmd, label, timeoutMs = 60000) {
+  const r = await runner.execute(shellCommand(cmd), { timeoutMs });
+  if (r.exitCode !== 0) throw new Error(`${label}: ${(r.stderr || r.stdout || '').slice(0, 3000)}`);
+  return r;
+}
+async function remote(cmd, timeoutMs = 60000) {
+  return runner.execute(shellCommand(cmd), { timeoutMs });
+}
+
+const paymentsSql = `
+SELECT p.id
+ || '|' || p.status
+ || '|' || COALESCE(p."merchantOrderNo",'')
+ || '|' || CASE WHEN COALESCE(p."providerTradeNo",'')<>'' THEN '1' ELSE '0' END
+ || '|' || COALESCE(p."providerTradeNo",'')
+ || '|' || COALESCE(p."amountCents"::text,'')
+ || '|' || p."createdAt"::text
+ || '|' || COALESCE(p."paidAt"::text,'')
+ || '|' || COALESCE(p.environment,'')
+ || '|' || COALESCE(p."isProductionTest"::text,'')
+ || '|' || COALESCE(p."lastQueryState",'')
+ || '|' || COALESCE(p."failureCode",'')
+ || '|' || o.id
+ || '|' || o.status
+ || '|' || COALESCE(o."orderNumber",'')
+ || '|' || COALESCE(pl.code,'')
+ || '|' || COALESCE(o."fulfilledAt"::text,'')
+FROM "Payment" p
+JOIN "CommercialOrder" o ON o.id=p."orderId"
+JOIN "Plan" pl ON pl.id=o."planId"
+WHERE o."workspaceId"='${WS}'
+  AND (pl.code='PAYMENT_TEST' OR p."isProductionTest"=true)
+ORDER BY p."createdAt" DESC
+LIMIT 10
+`.replace(/\n/g, ' ');
+
+const payments = await remoteOk(
+  `podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(paymentsSql)}`,
+  'payments',
+  20000,
+);
+const paymentLines = String(payments.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+const succeededLine = paymentLines.find((l) => l.includes('|SUCCEEDED|')) || paymentLines[0];
+const parts = succeededLine ? succeededLine.split('|') : [];
+const paymentId = parts[0] || '';
+const outTradeNo = parts[2] || '';
+
+const webhookSql = `
+SELECT e.id
+ || '|' || COALESCE(e.status,'')
+ || '|' || COALESCE(e."eventType",'')
+ || '|' || COALESCE(e."externalEventId",'')
+ || '|' || e."receivedAt"::text
+ || '|' || COALESCE(e."processedAt"::text,'')
+ || '|' || COALESCE(e."paymentId",'')
+ || '|' || COALESCE(e."errorCode",'')
+ || '|' || CASE WHEN COALESCE(e."payload"::text,'') ILIKE '%sign%' THEN '1' ELSE '0' END
+FROM "PaymentWebhookEvent" e
+WHERE e.provider='ALIPAY'
+  AND (e."paymentId"='${paymentId}' OR e."receivedAt" > NOW() - INTERVAL '6 hours')
+ORDER BY e."receivedAt" DESC
+LIMIT 20
+`.replace(/\n/g, ' ');
+let webhooks = { stdout: '' };
+try {
+  webhooks = await remoteOk(
+    `podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(webhookSql)}`,
+    'webhooks',
+    20000,
+  );
+} catch (e) {
+  webhooks = { stdout: String(e) };
+}
+
+const auditSql = `
+SELECT a."action" || '|' || a."createdAt"::text || '|' || COALESCE(a."resourceId",'') || '|' || COALESCE(a."workspaceId",'')
+FROM "AuditLog" a
+WHERE a."workspaceId"='${WS}'
+  AND (
+    a."action" ILIKE '%PAYMENT%'
+    OR a."action" ILIKE '%ALIPAY%'
+    OR a."action" ILIKE '%FULFILL%'
+    OR a."action" ILIKE '%ORDER%'
+    OR a."action" ILIKE '%SUBSCRIPTION%'
+    OR a."resourceId"='${paymentId}'
+    OR a."resourceId"='${outTradeNo}'
+  )
+ORDER BY a."createdAt" DESC
+LIMIT 80
+`.replace(/\n/g, ' ');
+let audits = { stdout: '' };
+try {
+  audits = await remoteOk(
+    `podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(auditSql)}`,
+    'audits',
+    20000,
+  );
+} catch (e) {
+  audits = { stdout: String(e) };
+}
+
+const planSql = `
+SELECT code || '|' || COALESCE("priceMonthly"::text,'') || '|' || COALESCE("priceYearly"::text,'') || '|' || COALESCE("priceMonthlyCents"::text,'') || '|' || status
+FROM "Plan"
+WHERE code IN ('free','pro','team','PAYMENT_TEST')
+ORDER BY code
+`.replace(/\n/g, ' ');
+const plans = await remoteOk(
+  `podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(planSql)}`,
+  'plans',
+  15000,
+);
+
+const markedPaidSql = `
+SELECT COUNT(*)::text
+FROM "AuditLog" a
+WHERE a."workspaceId"='${WS}'
+  AND (a."action" ILIKE '%PAYMENT_MARKED_PAID%' OR a."action" ILIKE '%MARKED_PAID%' OR a."action"='PAYMENT_SUCCEEDED')
+  AND (a."resourceId"='${paymentId}' OR a."createdAt" > NOW() - INTERVAL '6 hours')
+`.replace(/\n/g, ' ');
+let markedPaidCount = '0';
+try {
+  markedPaidCount = String(
+    (await remoteOk(`podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(markedPaidSql)}`, 'marked', 15000)).stdout || '',
+  ).trim();
+} catch {
+  markedPaidCount = 'UNKNOWN';
+}
+
+const paidCountSql = `SELECT COUNT(*)::text FROM "Payment" p JOIN "CommercialOrder" o ON o.id=p."orderId" WHERE o."workspaceId"='${WS}' AND p.status='SUCCEEDED' AND p."amountCents"=90 AND p."isProductionTest"=true`;
+const paidCount = String(
+  (await remoteOk(`podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(paidCountSql)}`, 'paid-count', 15000)).stdout || '',
+).trim();
+
+const fulfillmentSql = `
+SELECT e."eventType" || '|' || COALESCE(e.source,'') || '|' || e."effectiveAt"::text || '|' || COALESCE(e."idempotencyKey",'')
+FROM "SubscriptionEvent" e
+WHERE e."workspaceId"='${WS}'
+  AND e."eventType"='PAYMENT_TEST_VALIDATED'
+ORDER BY e."effectiveAt" DESC
+LIMIT 5
+`.replace(/\n/g, ' ');
+const fulfillment = String(
+  (await remoteOk(`podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(fulfillmentSql)}`, 'fulfillment', 15000)).stdout || '',
+).trim();
+
+const orderStatusSql = `SELECT o.status || '|' || COALESCE(o."fulfilledAt"::text,'') FROM "CommercialOrder" o JOIN "Payment" p ON p."orderId"=o.id WHERE p.id='${paymentId}'`;
+const orderStatusLine = String(
+  (await remoteOk(`podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(orderStatusSql)}`, 'order-status', 15000)).stdout || '',
+).trim();
+
+const subSql = `
+SELECT s.id || '|' || COALESCE(s.status,'') || '|' || COALESCE(pl.code,'') || '|' || s."updatedAt"::text
+FROM "WorkspaceSubscription" s
+JOIN "Plan" pl ON pl.id=s."planId"
+WHERE s."workspaceId"='${WS}'
+ORDER BY s."updatedAt" DESC
+LIMIT 5
+`.replace(/\n/g, ' ');
+let subs = { stdout: '' };
+try {
+  subs = await remoteOk(
+    `podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(subSql)}`,
+    'subs',
+    15000,
+  );
+} catch {
+  try {
+    const alt = `SELECT s.id || '|' || COALESCE(s.status,'') || '|' || COALESCE(s."planCode",'') || '|' || s."updatedAt"::text FROM "Subscription" s WHERE s."workspaceId"='${WS}' ORDER BY s."updatedAt" DESC LIMIT 5`.replace(/\n/g, ' ');
+    subs = await remoteOk(`podman exec launchos-alpha-postgres psql -U launchos_alpha -d launchos -Atc ${JSON.stringify(alt)}`, 'subs-alt', 15000);
+  } catch (e2) {
+    subs = { stdout: String(e2) };
+  }
+}
+
+const gatesBefore = await remoteOk(
+  `grep -E '^(REAL_PAYMENTS_ENABLED|PAYMENT_TEST_REAL_ENABLED|ALIPAY_PRODUCTION_TEST_ENABLED|ALIPAY_PRODUCTION_ENABLED|ALIPAY_SANDBOX_ONLY|ALIPAY_PRODUCTION_TEST_WORKSPACE_ID)=' /opt/launchos/config/alpha-api.env || true`,
+  'gates-before',
+  15000,
+);
+
+// Alipay production query inside API container (SAFE fields only)
+const queryScript = `
+const { PrismaClient } = require('@launchos/database');
+const { decryptCredential } = require('@launchos/shared');
+const { AlipayPaymentProvider } = require('@launchos/providers');
+(async () => {
+  const prisma = new PrismaClient();
+  const account = await prisma.paymentProviderAccount.findUnique({
+    where: { provider_environment: { provider: 'ALIPAY', environment: 'PRODUCTION' } },
+  });
+  const privateKey = decryptCredential(account.credentialEncrypted);
+  const provider = new AlipayPaymentProvider({
+    appId: account.appId,
+    gatewayUrl: account.gatewayUrl,
+    privateKey,
+    alipayPublicKey: account.publicKey,
+    notifyUrl: account.notifyUrl,
+    returnUrl: account.returnUrl,
+  });
+  const r = await provider.getCheckoutStatus(${JSON.stringify(outTradeNo)});
+  const safe = {
+    outTradeNo: ${JSON.stringify(outTradeNo)},
+    state: r.state,
+    amountCents: r.amountCents ?? null,
+    currency: r.currency ?? null,
+    providerTradeNoPresent: !!(r.providerTradeNo),
+    merchantOrderNo: r.merchantOrderNo ?? null,
+    subCode: r.subCode ?? null,
+    gatewayUrl: account.gatewayUrl,
+    environment: account.environment,
+  };
+  console.log(JSON.stringify(safe));
+  await prisma.$disconnect();
+})().catch((e) => { console.error(JSON.stringify({ error: String(e.message || e) })); process.exit(1); });
+`;
+await runner.writeTextFile('/opt/launchos/tmp/m81a-query-one.js', queryScript);
+const alipayQuery = await remote(
+  `podman exec -i launchos-alpha-api node -e ${JSON.stringify(queryScript)}`,
+  60000,
+);
+let alipaySafe = {};
+try {
+  alipaySafe = JSON.parse(String(alipayQuery.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{}');
+} catch {
+  alipaySafe = { parseError: true, raw: String(alipayQuery.stdout || alipayQuery.stderr || '').slice(0, 500) };
+}
+
+await runner.disconnect();
+
+const adminLogin = curl('https://api-alpha.zsaos.com/api/v1/auth/login', 'api-alpha.zsaos.com', {
+  method: 'POST',
+  body: JSON.stringify({ email: adminAuth.email, password: adminAuth.password }),
+});
+const adminToken = parse(adminLogin.text).accessToken;
+if (!adminToken) throw new Error('admin login failed');
+const adminHdr = { authorization: `Bearer ${adminToken}` };
+
+const userLogin = curl('https://api-alpha.zsaos.com/api/v1/auth/login', 'api-alpha.zsaos.com', {
+  method: 'POST',
+  body: JSON.stringify({ email: userAuth.email || '1002@qq.com', password: userAuth.password }),
+});
+const userToken = parse(userLogin.text).accessToken;
+const userHdr = { authorization: `Bearer ${userToken}` };
+
+const reconcile = curl('https://api-alpha.zsaos.com/api/v1/admin/payments/reconcile', 'api-alpha.zsaos.com', {
+  method: 'POST',
+  headers: adminHdr,
+  body: '{}',
+  maxTime: '120',
+});
+const paymentDetail = paymentId
+  ? curl(`https://api-alpha.zsaos.com/api/v1/admin/payments/${paymentId}`, 'api-alpha.zsaos.com', { headers: adminHdr })
+  : { status: 0, text: '{}' };
+const paymentTestStatus = curl('https://api-alpha.zsaos.com/api/v1/admin/commercial/payment-test', 'api-alpha.zsaos.com', {
+  headers: adminHdr,
+  maxTime: '120',
+});
+const checkoutPro = curl('https://api-alpha.zsaos.com/api/v1/billing/checkout', 'api-alpha.zsaos.com', {
+  method: 'POST',
+  headers: userHdr,
+  body: JSON.stringify({ planCode: 'pro', billingCycle: 'MONTHLY' }),
+});
+const billing = curl('https://api-alpha.zsaos.com/api/v1/account/billing', 'api-alpha.zsaos.com', { headers: userHdr });
+const adminPayments = curl('https://api-alpha.zsaos.com/api/v1/admin/payments?limit=20', 'api-alpha.zsaos.com', { headers: adminHdr });
+
+const pages = {};
+for (const path of [
+  '/overview',
+  '/projects',
+  '/projects/new',
+  '/deployments',
+  '/runtime',
+  '/domains',
+  '/resources',
+  '/usage',
+  '/plan',
+  '/billing',
+  '/profile',
+  '/admin',
+  '/admin/commercial',
+  '/admin/commercial/payment-test',
+  '/admin/commercial/payments',
+]) {
+  pages[path] = curl(`https://alpha.zsaos.com${path}`, 'alpha.zsaos.com', { headers: adminHdr, maxTime: '30' }).status;
+}
+
+const runtimeHealth = {
+  api: curl('https://api-alpha.zsaos.com/api/v1/health', 'api-alpha.zsaos.com').status,
+};
+
+let gateClose = null;
+if (closeGate) {
+  if (parts[1] !== 'SUCCEEDED') throw new Error('refusing to close gate: payment not SUCCEEDED');
+  await runner.connect({
+    host: server.host,
+    port: server.port,
+    username: resolveServerSshUsername({ serverUsername: server.username, provider: server.provider }),
+    password: decryptCredential(server.credentialEncrypted),
+    readyTimeoutMs: 30000,
+  });
+  await runner.writeTextFile(
+    '/opt/launchos/tmp/m81a-close-test-gate.sh',
+    [
+      '#!/bin/bash',
+      'set -euo pipefail',
+      'for f in /opt/launchos/config/alpha-api.env /opt/launchos/config/alpha-worker.env; do',
+      '  [ -f "$f" ] || continue',
+      '  for key in REAL_PAYMENTS_ENABLED ALIPAY_PRODUCTION_ENABLED; do',
+      '    if grep -q "^${key}=" "$f"; then sed -i "s/^${key}=.*/${key}=false/" "$f"; else echo "${key}=false" >> "$f"; fi',
+      '  done',
+      '  for key in PAYMENT_TEST_REAL_ENABLED ALIPAY_PRODUCTION_TEST_ENABLED; do',
+      '    if grep -q "^${key}=" "$f"; then sed -i "s/^${key}=.*/${key}=false/" "$f"; else echo "${key}=false" >> "$f"; fi',
+      '  done',
+      "  if grep -q '^ALIPAY_SANDBOX_ONLY=' \"$f\"; then sed -i 's/^ALIPAY_SANDBOX_ONLY=.*/ALIPAY_SANDBOX_ONLY=true/' \"$f\"; else echo 'ALIPAY_SANDBOX_ONLY=true' >> \"$f\"; fi",
+      'done',
+      "grep -E '^(REAL_PAYMENTS_ENABLED|PAYMENT_TEST_REAL_ENABLED|ALIPAY_PRODUCTION_TEST_ENABLED|ALIPAY_PRODUCTION_ENABLED|ALIPAY_SANDBOX_ONLY|ALIPAY_PRODUCTION_TEST_WORKSPACE_ID)=' /opt/launchos/config/alpha-api.env || true",
+      '',
+    ].join('\n'),
+  );
+  await remoteOk('chmod 700 /opt/launchos/tmp/m81a-close-test-gate.sh && /opt/launchos/tmp/m81a-close-test-gate.sh', 'close-gate', 30000);
+  const image = await remote(`podman inspect -f '{{.Config.Image}}' launchos-alpha-api`, 15000);
+  const imageName = String(image.stdout || '').trim() || 'localhost/launchos-alpha-api:m81pay';
+  await remoteOk(`/opt/launchos/bin/m5-run-api.sh launchos-alpha-api 39110 ${imageName}`, 'restart-api', 180000);
+  let ready = false;
+  for (let i = 0; i < 40; i++) {
+    const probe = await remote('curl -sf --max-time 3 http://127.0.0.1:39110/api/v1/health', 15000);
+    if (probe.exitCode === 0) {
+      ready = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  if (!ready) throw new Error('api not ready after gate close');
+  const gatesAfter = await remoteOk(
+    `grep -E '^(REAL_PAYMENTS_ENABLED|PAYMENT_TEST_REAL_ENABLED|ALIPAY_PRODUCTION_TEST_ENABLED|ALIPAY_PRODUCTION_ENABLED|ALIPAY_SANDBOX_ONLY)=' /opt/launchos/config/alpha-api.env || true`,
+    'gates-after',
+    15000,
+  );
+  await runner.disconnect();
+  gateClose = String(gatesAfter.stdout || '').trim();
+}
+
+const auditLines = String(audits.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+const webhookLines = String(webhooks.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+const billingBody = parse(billing.text);
+const adminBody = parse(adminPayments.text);
+const detailBody = parse(paymentDetail.text);
+const paymentTestBody = parse(paymentTestStatus.text);
+const fulfillParts = fulfillment.split(/\r?\n/).filter(Boolean)[0]?.split('|') || [];
+const orderParts = orderStatusLine.split('|');
+
+const relatedWebhook = webhookLines.find((l) => l.includes(paymentId) || l.includes('PAYMENT_SUCCEEDED'));
+const paymentTestValidatedCount = fulfillment.split(/\r?\n/).filter((l) => l.includes('PAYMENT_TEST_VALIDATED')).length;
+
+const report = {
+  closeGateRequested: closeGate,
+  gatesBefore: String(gatesBefore.stdout || '').trim(),
+  gatesAfterClose: gateClose,
+  payment: {
+    PAYMENT_ORDER_ID: paymentId,
+    LOCAL_STATUS: parts[1] || null,
+    OUT_TRADE_NO: outTradeNo,
+    PROVIDER_TRADE_NO_PRESENT: parts[3] === '1',
+    PROVIDER_TRADE_NO_PREFIX: parts[4] ? String(parts[4]).slice(0, 6) + '...' : null,
+    AMOUNT_CENTS: parts[5] || null,
+    CREATED_AT: parts[6] || null,
+    PAID_AT: parts[7] || null,
+    ENVIRONMENT: parts[8] || null,
+    IS_PRODUCTION_TEST: parts[9] || null,
+    LAST_QUERY_STATE: parts[10] || null,
+    ORDER_STATUS: orderParts[0] || parts[13] || null,
+    PLAN_CODE: parts[15] || null,
+    FULFILLED_AT: orderParts[1] || parts[16] || null,
+    FULFILLMENT_EVENT: fulfillParts[0] || null,
+    FULFILLMENT_SOURCE: fulfillParts[1] || null,
+  },
+  alipayQuery: alipaySafe,
+  webhooks: webhookLines,
+  audits: auditLines.slice(0, 40),
+  plans: String(plans.stdout || '').trim().split(/\r?\n/).filter(Boolean),
+  subscriptions: String(subs.stdout || '').trim().split(/\r?\n/).filter(Boolean),
+  subscriptionEventsPaymentTest: fulfillment.split(/\r?\n/).filter(Boolean),
+  counts: {
+    SUCCEEDED_PAYMENT_TEST_90: paidCount,
+    MARKED_PAID_AUDIT_NEAR: markedPaidCount,
+    PAYMENT_TEST_VALIDATED_COUNT: paymentTestValidatedCount,
+  },
+  reconcile: { status: reconcile.status, body: parse(reconcile.text) },
+  paymentDetail: { status: paymentDetail.status, body: detailBody },
+  paymentTestStatus: { status: paymentTestStatus.status, body: paymentTestBody },
+  checkoutPro: { status: checkoutPro.status, body: parse(checkoutPro.text) },
+  billing: { status: billing.status, body: billingBody },
+  adminPayments: { status: adminPayments.status, body: adminBody },
+  pages,
+  runtimeHealth,
+  checks: {
+    PAYMENT_STATUS_SUCCEEDED: parts[1] === 'SUCCEEDED',
+    PROVIDER_TRADE_NO_PRESENT: parts[3] === '1',
+    PAID_AT_PRESENT: !!parts[7],
+    ALIPAY_TRADE_FOUND: alipaySafe.state === 'SUCCEEDED' || alipaySafe.state === 'TRADE_SUCCESS',
+    ALIPAY_AMOUNT_90: alipaySafe.amountCents === 90,
+    NOTIFY_OR_QUERY_WEBHOOK: !!relatedWebhook,
+    PAYMENT_TEST_VALIDATED: paymentTestValidatedCount >= 1,
+    PAYMENT_TEST_VALIDATED_ONCE: paymentTestValidatedCount === 1,
+    ORDER_FULFILLED: (orderParts[0] || parts[13]) === 'FULFILLED',
+    PRO_CHECKOUT_BLOCKED: checkoutPro.status >= 400,
+    REAL_PAYMENTS_FALSE: /REAL_PAYMENTS_ENABLED=false/.test(String(gateClose || gatesBefore.stdout || '')),
+  },
+};
+
+writeFileSync(join(ARTIFACT, 'm8-1a-final-closure-raw.json'), JSON.stringify(report, null, 2));
+console.log(JSON.stringify(report, null, 2));
+await prisma.$disconnect();

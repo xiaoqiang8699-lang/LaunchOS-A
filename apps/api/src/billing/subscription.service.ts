@@ -21,17 +21,28 @@ import {
   resolveWorkspaceEntitlements,
   sanitizeAdminAuditMetadata,
   subscriptionStatusLabel,
+  sourceDisplayLabel,
+  normalizeSubscriptionSource,
+  evaluateSubscriptionCompliance,
+  renewalDue,
+  SAFE_DOWNGRADE_GUARANTEES,
 } from '@launchos/domain';
 import { PrismaService } from '../database/prisma.service';
 import { SubscriptionEngineService } from './subscription-engine.service';
 
 const SOURCE_LABELS: Record<string, string> = {
-  DEFAULT_FREE: '默认免费',
+  DEFAULT_FREE: '免费默认',
+  FREE_DEFAULT: '免费默认',
   TRIAL: '试用',
   MANUAL_ADMIN: '管理员开通',
-  COMPLIMENTARY: '平台赠送',
-  PAYMENT_PROVIDER: '支付渠道',
+  COMPLIMENTARY: '平台赠送 / Beta',
+  PAYMENT_PROVIDER: '真实订阅',
+  PAYMENT: '真实订阅',
+  BETA_OVERRIDE: 'Beta 测试权益',
+  ADMIN_OVERRIDE: '管理员覆盖',
+  MIGRATED_LEGACY: '历史迁移',
   MOCK_PAYMENT: '测试开通',
+  ALIPAY_PRODUCTION_TEST: '支付联调（非正式订阅）',
 };
 
 @Injectable()
@@ -65,8 +76,11 @@ export class SubscriptionService {
     return {
       ...view,
       source: row?.source ?? 'DEFAULT_FREE',
-      sourceLabel: SOURCE_LABELS[row?.source ?? 'DEFAULT_FREE'] ?? row?.source ?? '默认免费',
+      sourceNormalized: normalizeSubscriptionSource(row?.source),
+      sourceLabel: sourceDisplayLabel(row?.source) || SOURCE_LABELS[row?.source ?? 'DEFAULT_FREE'] || '免费默认',
       isRevenueGenerating: isRevenueGenerating(row?.source ?? 'DEFAULT_FREE'),
+      isPaidSubscription: normalizeSubscriptionSource(row?.source) === 'PAYMENT',
+      isBetaEntitlement: normalizeSubscriptionSource(row?.source) === 'BETA_OVERRIDE' || normalizeSubscriptionSource(row?.source) === 'COMPLIMENTARY',
       trialEndsAt: row?.trialEndsAt ?? null,
       trialEndsLabel: row?.trialEndsAt ? formatInTimeZone(row.trialEndsAt, timeZone) : null,
       nextChange,
@@ -74,8 +88,26 @@ export class SubscriptionService {
       periodStartLabel: row ? formatInTimeZone(row.currentPeriodStart, timeZone) : null,
       periodEndLabel: row ? formatInTimeZone(row.currentPeriodEnd, timeZone) : null,
       canResume: row?.status === 'CANCEL_AT_PERIOD_END',
-      canCancel: Boolean(view.canCancel && row?.status !== 'CANCEL_AT_PERIOD_END'),
+      canCancel: Boolean(view.canCancel && row?.status !== 'CANCEL_AT_PERIOD_END' && row?.status !== 'GRACE_PERIOD'),
+      // M8-2: no auto debit — never claim auto-renew is on
+      autoRenew: false,
+      autoRenewImplemented: false,
+      cancelAtPeriodEnd: row?.cancelAtPeriodEnd ?? false,
+      currentPeriodStart: row?.currentPeriodStart?.toISOString() ?? null,
+      currentPeriodEnd: row?.currentPeriodEnd?.toISOString() ?? null,
+      billingCycle: (row as { billingCycle?: string } | null)?.billingCycle ?? 'NONE',
+      gracePeriodEnd: (row as { gracePeriodEnd?: Date | null } | null)?.gracePeriodEnd?.toISOString?.() ?? null,
+      gracePeriodEndLabel: (row as { gracePeriodEnd?: Date | null } | null)?.gracePeriodEnd
+        ? formatInTimeZone((row as { gracePeriodEnd: Date }).gracePeriodEnd, timeZone)
+        : null,
+      renewalDue: row
+        ? renewalDue({ currentPeriodEnd: row.currentPeriodEnd, now: new Date(), windowDays: 7 })
+        : false,
+      statusLabel: row
+        ? subscriptionStatusLabel(row.status)
+        : (view.subscription?.statusLabel ?? subscriptionStatusLabel('ACTIVE')),
       grandfathered: row?.planVersion?.grandfathered ?? false,
+      safeDowngradeGuarantees: SAFE_DOWNGRADE_GUARANTEES,
       commercial: presentCommercialSummary({
         planName: view.effectivePlan.name,
         priceMonthly: view.effectivePlan.priceMonthly,
@@ -107,6 +139,171 @@ export class SubscriptionService {
   async resumeForUser(userId: string) {
     const membership = await this.currentWorkspace(userId);
     return this.resume({ actorId: userId, workspaceId: membership.workspaceId, requireAdminReason: false });
+  }
+
+  /**
+   * Plan change without payment.
+   * Formal Free→Pro/Team requires Payment SUCCEEDED — blocked here unless Beta/Admin override.
+   */
+  async changePlanForUser(userId: string, planCode: string) {
+    const membership = await this.currentWorkspace(userId);
+    if (!['OWNER', 'ADMIN'].includes(membership.role)) {
+      throw new ForbiddenException('只有工作空间管理员可以调整计划');
+    }
+    const code = planCode.trim().toLowerCase();
+    if (!code) throw new BadRequestException('请选择套餐');
+    if (code === 'enterprise' || code === 'payment_test') {
+      throw new BadRequestException(code === 'enterprise' ? 'Enterprise 请联系销售' : '无效套餐');
+    }
+    const row = await this.load({ workspaceId: membership.workspaceId });
+    const plan = await this.planByCode(code);
+    if (plan.contactSales) throw new BadRequestException('该套餐请联系销售');
+
+    const fromCode = row.plan.code;
+    const paidTargets = new Set(['pro', 'team']);
+    const unpaidUpgrade = (fromCode === 'free' || fromCode === 'PAYMENT_TEST') && paidTargets.has(code);
+    const unpaidLateralOrUpgrade =
+      paidTargets.has(code) &&
+      normalizeSubscriptionSource(row.source) !== 'PAYMENT' &&
+      decidePlanChange({
+        fromCode,
+        toCode: code,
+        fromPlanId: row.planId,
+        toPlanId: plan.id,
+        currentPeriodEnd: row.currentPeriodEnd.toISOString(),
+      }).ok &&
+      (fromCode === 'free' || fromCode === 'pro' || fromCode === 'team');
+
+    if (unpaidUpgrade || (unpaidLateralOrUpgrade && fromCode === 'free')) {
+      const platformAdmin = await this.isAdmin(userId);
+      const betaOverride = await this.prisma.workspaceEntitlementOverride.findFirst({
+        where: {
+          workspaceId: membership.workspaceId,
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      const betaReason = String((betaOverride as { reason?: string } | null)?.reason || '');
+      const hasBeta = Boolean(betaOverride && /beta/i.test(betaReason));
+      if (!platformAdmin && !hasBeta) {
+        throw new ForbiddenException({
+          code: 'FREE_TO_PAID_WITHOUT_PAYMENT_BLOCKED',
+          message: '正式套餐升级需要完成支付。当前真实支付尚未开放，且本工作空间没有有效的 Beta 测试权益。',
+        });
+      }
+    }
+
+    const quota = await this.engine.evaluateWorkspaceQuota(row.workspaceId, { audit: false });
+    const decision = decidePlanChange({
+      fromCode: row.plan.code,
+      toCode: plan.code,
+      fromPlanId: row.planId,
+      toPlanId: plan.id,
+      currentPeriodEnd: row.currentPeriodEnd.toISOString(),
+      usage: {
+        projects: quota.usage.projectCount,
+        members: quota.usage.memberCount,
+        deployments: quota.usage.deploymentCount,
+        servers: quota.usage.serverCount,
+        databases: quota.usage.databaseCount,
+        redis: quota.usage.redisCount,
+      },
+      targetLimits: {
+        projects: plan.maxProjects,
+        members: plan.maxMembers,
+        deployments: plan.maxDeploymentsPerMonth,
+        servers: plan.maxServers,
+        databases: plan.maxDatabases,
+        redis: plan.maxRedisInstances,
+      },
+    });
+    if (!decision.ok) throw new BadRequestException(decision.message);
+
+    const compliance = evaluateSubscriptionCompliance({
+      usage: {
+        projects: quota.usage.projectCount,
+        members: quota.usage.memberCount,
+      },
+      limits: {
+        maxProjects: plan.maxProjects,
+        maxMembers: plan.maxMembers,
+      },
+    });
+
+    if (decision.value.mode === 'immediate') {
+      const nextSource =
+        plan.code === 'free'
+          ? 'FREE_DEFAULT'
+          : 'BETA_OVERRIDE';
+      await this.prisma.subscription.update({
+        where: { id: row.id },
+        data: {
+          planId: plan.id,
+          planVersionId: (await this.openVersion(plan.id))?.id,
+          pendingPlanId: null,
+          planChangeEffectiveAt: null,
+          status: row.status === 'CANCEL_AT_PERIOD_END' ? SubscriptionStatus.CANCEL_AT_PERIOD_END : SubscriptionStatus.ACTIVE,
+          cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+          source: nextSource,
+          complimentaryReason: nextSource === 'BETA_OVERRIDE' ? 'Beta 计划变更（未扣款）' : row.complimentaryReason,
+          quotaExceeded: compliance.status === 'OVER_QUOTA',
+          billingCycle: plan.code === 'free' ? 'NONE' : row.billingCycle || 'NONE',
+        } as Prisma.SubscriptionUpdateInput,
+      });
+    } else {
+      await this.prisma.subscription.update({
+        where: { id: row.id },
+        data: {
+          pendingPlanId: plan.id,
+          planChangeEffectiveAt: new Date(decision.value.planChangeEffectiveAt ?? row.currentPeriodEnd),
+        },
+      });
+      try {
+        await this.prisma.subscriptionChangeRequest.create({
+          data: {
+            workspaceId: row.workspaceId,
+            subscriptionId: row.id,
+            fromPlanId: row.planId,
+            toPlanId: plan.id,
+            fromPlanVersionId: row.planVersionId,
+            toPlanVersionId: (await this.openVersion(plan.id))?.id,
+            changeType: 'DOWNGRADE',
+            effectiveMode: 'PERIOD_END',
+            effectiveAt: new Date(decision.value.planChangeEffectiveAt ?? row.currentPeriodEnd),
+            status: 'PENDING',
+            idempotencyKey: `change:${row.id}:${plan.id}:${row.currentPeriodEnd.toISOString()}`,
+            metadataSafe: { warning: decision.value.warning, betaNoCharge: true },
+          },
+        });
+      } catch (error) {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+      }
+    }
+
+    await this.record(
+      row,
+      userId,
+      decision.value.eventType,
+      row.planId,
+      plan.id,
+      row.source,
+      '用户调整计划（Beta/未扣款，非正式 PAYMENT）',
+      decision.value.planChangeEffectiveAt ?? new Date().toISOString(),
+      { warning: decision.value.warning, betaNoCharge: true, compliance: compliance.status },
+    );
+
+    return {
+      ok: true,
+      mode: decision.value.mode,
+      warning: decision.value.warning ?? compliance.message,
+      plan: { code: plan.code, name: plan.name },
+      pendingPlanId: decision.value.pendingPlanId,
+      charged: false,
+      paymentTriggered: false,
+      source: plan.code === 'free' ? 'FREE_DEFAULT' : 'BETA_OVERRIDE',
+      compliance: compliance.status,
+    };
   }
 
   async startTrial(input: { actorId: string; workspaceId?: string; subscriptionId?: string; planCode: string; days: number; reason?: string; adminRegrant: boolean; actorIsAdmin?: boolean }) {
@@ -237,11 +434,22 @@ export class SubscriptionService {
     if (!decision.ok) throw new BadRequestException(decision.message);
     await this.prisma.subscription.update({
       where: { id: row.id },
-      data: { status: SubscriptionStatus.CANCEL_AT_PERIOD_END, cancelAtPeriodEnd: true },
+      data: {
+        status: SubscriptionStatus.CANCEL_AT_PERIOD_END,
+        cancelAtPeriodEnd: true,
+        canceledAt: new Date(),
+      } as Prisma.SubscriptionUpdateInput,
     });
-    await this.record(row, input.actorId, 'SUBSCRIPTION_CANCEL_SCHEDULED', row.planId, row.planId, row.source, input.reason ?? '用户预约取消', row.currentPeriodEnd.toISOString());
+    await this.record(row, input.actorId, 'SUBSCRIPTION_CANCEL_SCHEDULED', row.planId, row.planId, row.source, input.reason ?? '用户预约到期取消', row.currentPeriodEnd.toISOString());
     await this.saveIntent(row.workspaceId, 'SUBSCRIPTION_ENDING', row.currentPeriodEnd.toISOString());
-    return { ok: true, status: 'CANCEL_AT_PERIOD_END', statusLabel: subscriptionStatusLabel('CANCEL_AT_PERIOD_END') };
+    return {
+      ok: true,
+      status: 'CANCEL_AT_PERIOD_END',
+      statusLabel: subscriptionStatusLabel('CANCEL_AT_PERIOD_END'),
+      message: `取消后，当前套餐仍可使用至周期结束。到期后将回退到基础套餐，已有数据不会被删除。`,
+      periodEnd: row.currentPeriodEnd.toISOString(),
+      autoRenew: false,
+    };
   }
 
   async cancelNow(input: { actorId: string; subscriptionId: string; confirmation: string; reason?: string }) {
@@ -284,8 +492,13 @@ export class SubscriptionService {
       where: { id: row.id },
       data: { status: SubscriptionStatus.ACTIVE, cancelAtPeriodEnd: false },
     });
-    await this.record(row, input.actorId, 'SUBSCRIPTION_RESUMED', row.planId, row.planId, row.source, input.reason ?? '用户取消预约', new Date().toISOString());
-    return { ok: true, status: 'ACTIVE' };
+    await this.record(row, input.actorId, 'SUBSCRIPTION_CANCEL_REVERSED', row.planId, row.planId, row.source, input.reason ?? '用户恢复订阅状态', new Date().toISOString());
+    return {
+      ok: true,
+      status: 'ACTIVE',
+      autoRenew: false,
+      message: '已恢复订阅状态。当前版本暂不支持自动扣款，后续周期仍需主动完成续费。',
+    };
   }
 
   async extendPeriod(input: { actorId: string; subscriptionId: string; days: number; reason?: string }) {
@@ -342,7 +555,8 @@ export class SubscriptionService {
       status: row.status,
       statusLabel: subscriptionStatusLabel(row.status),
       source: row.source,
-      sourceLabel: SOURCE_LABELS[row.source] ?? row.source,
+      sourceNormalized: normalizeSubscriptionSource(row.source),
+      sourceLabel: sourceDisplayLabel(row.source) || SOURCE_LABELS[row.source] || row.source,
       isRevenueGenerating: isRevenueGenerating(row.source),
       activationSource: row.activationSource,
       trialStartedAt: row.trialStartedAt,
@@ -352,6 +566,12 @@ export class SubscriptionService {
       currentPeriodStart: row.currentPeriodStart,
       currentPeriodEnd: row.currentPeriodEnd,
       cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+      billingCycle: (row as { billingCycle?: string }).billingCycle ?? 'NONE',
+      gracePeriodEnd: (row as { gracePeriodEnd?: Date | null }).gracePeriodEnd ?? null,
+      expiredAt: (row as { expiredAt?: Date | null }).expiredAt ?? null,
+      activatedAt: (row as { activatedAt?: Date | null }).activatedAt ?? null,
+      latestPaymentId: (row as { latestPaymentId?: string | null }).latestPaymentId ?? null,
+      quotaExceeded: row.quotaExceeded,
       manualAutoExtension: row.manualAutoExtension,
       externalCustomerId: row.externalCustomerId,
       externalSubscriptionId: row.externalSubscriptionId,
@@ -383,6 +603,102 @@ export class SubscriptionService {
 
   async processDue(now = new Date()) {
     return processSubscriptionLifecycle(this.prisma, now);
+  }
+
+  async reconcile(adminId: string, subscriptionId?: string) {
+    await this.requireAdmin(adminId);
+    const { detectSubscriptionDrift, classifySubscriptionForBackfill } = await import('@launchos/domain');
+    const subs = await this.prisma.subscription.findMany({
+      where: subscriptionId ? { id: subscriptionId } : undefined,
+      include: { plan: true },
+      take: 500,
+      orderBy: { updatedAt: 'desc' },
+    });
+    const payments = await this.prisma.payment.findMany({
+      where: { status: 'SUCCEEDED', ...(subscriptionId ? { workspaceId: { in: subs.map((s) => s.workspaceId) } } : {}) },
+      include: { order: { include: { plan: true } } },
+      take: 500,
+      orderBy: { createdAt: 'desc' },
+    });
+    const changeRequests = await this.prisma.subscriptionChangeRequest.findMany({
+      where: { status: 'PENDING', ...(subscriptionId ? { subscriptionId } : {}) },
+      take: 200,
+    });
+    const findings = detectSubscriptionDrift({
+      now: new Date(),
+      payments: payments.map((p) => ({
+        id: p.id,
+        workspaceId: p.workspaceId,
+        status: p.status,
+        planCode: p.order?.plan?.code,
+        isProductionTest: p.isProductionTest,
+        businessType: p.isProductionTest ? 'PAYMENT_TEST' : 'SUBSCRIPTION_PURCHASE',
+        activatedOnSubscription: subs.some((s) => (s as { latestPaymentId?: string | null }).latestPaymentId === p.id),
+      })),
+      subscriptions: subs.map((s) => ({
+        id: s.id,
+        workspaceId: s.workspaceId,
+        status: s.status,
+        source: s.source,
+        planCode: s.plan.code,
+        currentPeriodEnd: s.currentPeriodEnd,
+        gracePeriodEnd: (s as { gracePeriodEnd?: Date | null }).gracePeriodEnd,
+        latestPaymentId: (s as { latestPaymentId?: string | null }).latestPaymentId,
+        pendingPlanId: s.pendingPlanId,
+        planChangeEffectiveAt: s.planChangeEffectiveAt,
+      })),
+      changeRequests: changeRequests.map((c) => ({
+        id: c.id,
+        subscriptionId: c.subscriptionId,
+        status: c.status,
+        effectiveAt: c.effectiveAt,
+      })),
+    });
+    const lifecycle = await processSubscriptionLifecycle(this.prisma, new Date());
+    const backfillPreview = subs.slice(0, 100).map((s) =>
+      classifySubscriptionForBackfill({
+        planCode: s.plan.code,
+        source: s.source,
+        status: s.status,
+        complimentaryReason: s.complimentaryReason,
+        overrideSource: s.overrideSource,
+        latestPaymentId: (s as { latestPaymentId?: string | null }).latestPaymentId,
+        isProductionTestPaymentOnly: false,
+      }),
+    );
+    return {
+      ok: true,
+      lifecycleProcessed: lifecycle.processed,
+      findings,
+      backfillPreviewSummary: {
+        FREE: backfillPreview.filter((b) => b.class === 'FREE').length,
+        BETA_OVERRIDE: backfillPreview.filter((b) => b.class === 'BETA_OVERRIDE').length,
+        PAYMENT: backfillPreview.filter((b) => b.class === 'PAYMENT').length,
+        AMBIGUOUS: backfillPreview.filter((b) => b.class === 'AMBIGUOUS').length,
+      },
+    };
+  }
+
+  async timeline(adminId: string, subscriptionId: string) {
+    await this.requireAdmin(adminId);
+    const events = await this.prisma.subscriptionEvent.findMany({
+      where: { subscriptionId },
+      orderBy: { createdAt: 'asc' },
+      take: 200,
+    });
+    return {
+      subscriptionId,
+      timeline: events.map((e) => ({
+        id: e.id,
+        eventType: e.eventType,
+        source: e.source,
+        effectiveAt: e.effectiveAt,
+        createdAt: e.createdAt,
+        fromPlanId: e.fromPlanId,
+        toPlanId: e.toPlanId,
+        metadataSafe: e.metadataSafe,
+      })),
+    };
   }
 
   private async entitlementsFor(workspaceId: string) {

@@ -4,11 +4,12 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ControlCenter } from '@/components/control-center';
+import { CreateAppEntryButton } from '@/components/create-app/create-app-entry-button';
 import { PageHeader } from '@/components/ui/section';
 import { Card } from '@/components/ui/section';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState, InlineAlert, Skeleton } from '@/components/ui/feedback';
-import { PrimaryLink, SecondaryLink } from '@/components/ui/button';
+import { SecondaryLink } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { APPLICATION_PURPOSE_LABELS, formatDateTime } from '@/lib/project-labels';
@@ -55,7 +56,7 @@ export default function MyAppsPage() {
       <PageHeader
         title="我的应用"
         description="查看运行状态、访问地址，并进入应用详情。"
-        action={<PrimaryLink href="/projects/new">创建应用</PrimaryLink>}
+        action={<CreateAppEntryButton />}
       />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

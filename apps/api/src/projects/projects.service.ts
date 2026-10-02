@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, BadRequestException, HttpException } from '@nestjs/common';
 import {
   ApplicationDomainType,
   ApplicationPurpose,
@@ -20,6 +20,7 @@ import {
 } from '../environments/environments.service';
 import { WorkspaceAccessService } from '../workspaces/workspace-access.service';
 import { EntitlementGovernanceService } from '../billing/entitlement-governance.service';
+import { ProductAnalyticsService } from '../analytics/product-analytics.service';
 import type { CreateProjectDto } from './dto/create-project.dto';
 import type { UpdateProjectDto } from './dto/update-project.dto';
 import { deriveApplicationStatus } from '../apps/application-status';
@@ -30,7 +31,8 @@ import {
   mapAggregateToApplicationStatus,
   type UnitProductStatus,
 } from '../deployable-units/unit-product';
-import { extractOnboardingZip, persistZipUpload } from '../onboarding/zip-intake.util';
+import { extractOnboardingZip, persistZipUpload, persistZipUploadFromPath, cleanupTempUpload } from '../onboarding/zip-intake.util';
+import { httpExceptionFromZipError } from '../common/zip-upload.multer';
 import { randomUUID } from 'node:crypto';
 
 const projectSelect = {
@@ -60,6 +62,7 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     private readonly workspaceAccess: WorkspaceAccessService,
     private readonly entitlements: EntitlementGovernanceService,
+    private readonly analytics: ProductAnalyticsService,
   ) {}
 
   async create(userId: string, dto: CreateProjectDto) {
@@ -74,8 +77,8 @@ export class ProjectsService {
     const defaultBranch =
       source?.branch ?? dto.defaultBranch?.trim() ?? (await this.detectDefaultBranch(sourceUrl));
 
-    return this.prisma.$transaction(async (tx) => {
-      const project = await tx.project.create({
+    const project = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.project.create({
         data: {
           workspaceId: membership.workspace.id,
           name: dto.name.trim(),
@@ -95,7 +98,7 @@ export class ProjectsService {
       if (source) {
         await tx.sourceRepository.create({
           data: {
-            projectId: project.id,
+            projectId: created.id,
             type: source.type,
             url: source.url,
             branch: source.branch,
@@ -109,7 +112,7 @@ export class ProjectsService {
         // Source bound → ensure control-plane default environment (no cloud resources).
         await tx.projectEnvironment.create({
           data: {
-            projectId: project.id,
+            projectId: created.id,
             name: DEFAULT_PROJECT_ENVIRONMENT_NAME,
             type: DEFAULT_PROJECT_ENVIRONMENT_TYPE,
             variables: {},
@@ -117,19 +120,50 @@ export class ProjectsService {
         });
       }
 
-      return project;
+      return created;
     });
+
+    void this.analytics
+      .track({
+        event: 'PROJECT_CREATED',
+        userId,
+        workspaceId: membership.workspace.id,
+        projectId: project.id,
+        metadata: { sourceType: project.sourceType },
+      })
+      .catch(() => undefined);
+    if (source) {
+      void this.analytics
+        .track({
+          event: 'SOURCE_CONNECTED',
+          userId,
+          workspaceId: membership.workspace.id,
+          projectId: project.id,
+          metadata: { sourceType: source.type },
+        })
+        .catch(() => undefined);
+    }
+
+    return project;
   }
 
   async createFromZip(
     userId: string,
-    file: { buffer: Buffer; originalname?: string; size?: number } | undefined,
+    file: Express.Multer.File | undefined,
   ) {
-    if (!file?.buffer?.byteLength) {
-      throw new BadRequestException('请选择 ZIP 文件');
+    const size = file?.size ?? file?.buffer?.byteLength ?? 0;
+    const diskPath = file?.path;
+    if (!file || (!diskPath && !file.buffer?.byteLength)) {
+      throw new BadRequestException({
+        code: 'SOURCE_ARCHIVE_UPLOAD_FAILED',
+        message: '请选择 ZIP 文件',
+      });
     }
     if (!/\.zip$/i.test(file.originalname || 'upload.zip')) {
-      throw new BadRequestException('仅支持 .zip 文件');
+      throw new BadRequestException({
+        code: 'SOURCE_ARCHIVE_INVALID',
+        message: '仅支持 .zip 文件',
+      });
     }
 
     const draftName = (file.originalname || 'upload.zip')
@@ -137,27 +171,73 @@ export class ProjectsService {
       .replace(/[^\w\u4e00-\u9fa5.-]+/g, '-')
       .slice(0, 60) || 'uploaded-app';
 
-    const project = await this.create(userId, {
-      name: draftName,
-      source: {
-        type: SourceType.UPLOAD,
-        url: `local://${draftName}`,
-        branch: 'local',
-        fullName: draftName,
-        isPrivate: false,
-      },
+    const uploadId = randomUUID();
+    let archivedPath: string | null = null;
+    let projectId: string | null = null;
+    const startedAt = Date.now();
+
+    await this.analytics.track({
+      event: 'SOURCE_ZIP_UPLOAD_STARTED',
+      userId,
+      metadata: { sizeBytes: size },
     });
 
     try {
-      const uploadId = randomUUID();
-      await persistZipUpload(uploadId, file.buffer);
+      if (diskPath) {
+        archivedPath = await persistZipUploadFromPath(uploadId, diskPath);
+      } else if (file.buffer) {
+        archivedPath = await persistZipUpload(uploadId, file.buffer);
+      }
+
+      const project = await this.create(userId, {
+        name: draftName,
+        source: {
+          type: SourceType.UPLOAD,
+          url: `local://${draftName}`,
+          branch: 'local',
+          fullName: draftName,
+          isPrivate: false,
+        },
+      });
+      projectId = project.id;
+
+      await this.analytics.track({
+        event: 'SOURCE_ZIP_UPLOAD_SUCCEEDED',
+        userId,
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        metadata: { sizeBytes: size, durationMs: Date.now() - startedAt },
+      });
+      await this.analytics.track({
+        event: 'SOURCE_ZIP_ANALYSIS_STARTED',
+        userId,
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        metadata: { sizeBytes: size },
+      });
+
       const workspaceDir = this.git.workspaceDir(project.id);
       const extracted = await extractOnboardingZip({
         projectId: project.id,
-        zipBuffer: file.buffer,
+        zipPath: archivedPath || undefined,
+        zipBuffer: !archivedPath && file.buffer ? file.buffer : undefined,
         originalName: file.originalname,
         workspaceDir,
       });
+
+      await this.analytics.track({
+        event: 'SOURCE_ZIP_ANALYSIS_SUCCEEDED',
+        userId,
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        metadata: {
+          sizeBytes: size,
+          fileCount: extracted.fileCount,
+          extractedBytes: extracted.extractedBytes,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+
       if (extracted.appName && extracted.appName !== draftName) {
         await this.prisma.project.update({
           where: { id: project.id },
@@ -174,18 +254,31 @@ export class ProjectsService {
       }
       return project;
     } catch (error) {
+      if (projectId) {
+        await this.prisma.project.delete({ where: { id: projectId } }).catch(() => undefined);
+      }
+      if (error instanceof HttpException) {
+        throw error;
+      }
       const code = error instanceof Error ? error.message : 'ZIP_FAILED';
-      const message =
-        code === 'ZIP_TOO_LARGE'
-          ? 'ZIP 文件过大，请压缩后再试。'
-          : code === 'ZIP_TOO_MANY_FILES' || code === 'ZIP_EXTRACTED_TOO_LARGE'
-            ? '项目文件过多或过大，请精简后再上传。'
-            : code === 'ZIP_EMPTY' || code === 'ZIP_EMPTY_CONTENT'
-              ? 'ZIP 内容为空。'
-              : code === 'ZIP_INVALID'
-                ? 'ZIP 文件无法读取。'
-                : '上传失败，请重新尝试。';
-      throw new BadRequestException(message);
+      await this.analytics.track({
+        event: code.startsWith('ZIP_') && !code.includes('UPLOAD')
+          ? 'SOURCE_ZIP_ANALYSIS_FAILED'
+          : 'SOURCE_ZIP_UPLOAD_FAILED',
+        userId,
+        projectId,
+        metadata: {
+          sizeBytes: size,
+          errorCategory: code,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      throw httpExceptionFromZipError(code);
+    } finally {
+      if (diskPath) {
+        await cleanupTempUpload(diskPath);
+      }
+      void size;
     }
   }
 

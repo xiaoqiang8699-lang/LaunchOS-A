@@ -123,7 +123,7 @@ export const BETA_PLAN_ENTITLEMENTS: Record<'free' | 'pro' | 'team', Entitlement
   pro: {
     maxProjects: 10,
     maxMonthlyDeployments: 100,
-    maxWorkspaceMembers: 1,
+    maxWorkspaceMembers: 2,
     maxRetainedVersions: 20,
     logRetentionDays: 7,
     customDomainEnabled: true,
@@ -606,7 +606,7 @@ export function subscriptionEntitlementBehavior(status: string): {
       stopRunningApps: false,
     };
   }
-  if (status === 'PAST_DUE') {
+  if (status === 'PAST_DUE' || status === 'GRACE_PERIOD') {
     return {
       usePlanEntitlements: true,
       fallBackToFree: false,

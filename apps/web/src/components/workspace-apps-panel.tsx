@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { VisitUrlBlock } from '@/components/visit-url';
+import { CreateAppEntryButton } from '@/components/create-app/create-app-entry-button';
 import { api, ApiError } from '@/lib/api';
 import { clearAccessToken, getAccessToken } from '@/lib/auth';
 import { PRODUCT_COPY } from '@/lib/product-language';
@@ -116,12 +117,9 @@ export function WorkspaceAppsPanel() {
         <section className="rounded-2xl border border-zinc-200 bg-white px-6 py-16 text-center">
           <h2 className="text-lg font-medium text-zinc-900">还没有应用</h2>
           <p className="mt-2 text-sm text-zinc-500">创建第一个应用，把代码部署上线。</p>
-          <Link
-            className="mt-6 inline-flex rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-            href="/projects/new"
-          >
-            {PRODUCT_COPY.createApp}
-          </Link>
+          <div className="mt-6 flex justify-center">
+            <CreateAppEntryButton label={PRODUCT_COPY.createApp} />
+          </div>
         </section>
       ) : (
         <ul className="space-y-3">

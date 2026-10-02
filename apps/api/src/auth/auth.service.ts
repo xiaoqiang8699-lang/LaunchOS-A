@@ -5,6 +5,7 @@ import { assertAccountCanUseProduct, isFirstTimeUser, isOrdinaryUserProject, mar
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../database/prisma.service';
 import { SubscriptionEngineService } from '../billing/subscription-engine.service';
+import { ProductAnalyticsService } from '../analytics/product-analytics.service';
 import type { PublicUser, PublicWorkspace } from './auth.types';
 import type { LoginDto } from './dto/login.dto';
 import type { RegisterDto } from './dto/register.dto';
@@ -17,6 +18,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly billing: SubscriptionEngineService,
+    private readonly analytics: ProductAnalyticsService,
   ) {}
 
   async register(dto: RegisterDto): Promise<{ user: PublicUser; workspace: PublicWorkspace }> {
@@ -59,6 +61,21 @@ export class AuthService {
     });
 
     await this.billing.ensureDefaultFree(result.workspace.id, result.user.id);
+
+    void this.analytics
+      .track({
+        event: 'USER_REGISTERED',
+        userId: result.user.id,
+        workspaceId: result.workspace.id,
+      })
+      .catch(() => undefined);
+    void this.analytics
+      .track({
+        event: 'WORKSPACE_CREATED',
+        userId: result.user.id,
+        workspaceId: result.workspace.id,
+      })
+      .catch(() => undefined);
 
     return {
       user: toPublicUser(result.user, 0),

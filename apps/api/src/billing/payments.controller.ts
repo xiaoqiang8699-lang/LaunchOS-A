@@ -1,10 +1,13 @@
-import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import type { Response } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
 import { userPaymentMessage } from '@launchos/domain';
 import { PaymentService } from './payment.service';
 import { AlipayPaymentService } from './alipay-payment.service';
+import { BillingCheckoutService } from './billing-checkout.service';
+import { FormalPaymentReadinessService } from './formal-payment-readiness.service';
 
 @Controller('payments')
 export class PaymentsWebhookController {
@@ -15,23 +18,52 @@ export class PaymentsWebhookController {
 
   @Post('webhooks/:provider')
   @HttpCode(200)
+  @UsePipes(new ValidationPipe({ whitelist: false, forbidNonWhitelisted: false, transform: false }))
   async webhook(
     @Param('provider') provider: string,
     @Body() body: Record<string, unknown>,
+    @Headers('content-type') contentType = '',
     @Headers('x-launchos-timestamp') timestamp = '',
     @Headers('x-launchos-signature') signature = '',
+    @Res({ passthrough: true }) res?: Response,
   ) {
     if (provider === 'alipay') {
-      const result = await this.alipay.notification(body);
-      if (result.httpStatus >= 400) throw new BadRequestException({ code: result.code, message: userPaymentMessage(result.code ?? '') });
-      return { status: result.status, code: result.code ?? null };
+      const normalized = normalizeAlipayNotifyBody(body);
+      const result = await this.alipay.notification(normalized);
+      if (result.httpStatus >= 400) {
+        throw new BadRequestException({ code: result.code, message: userPaymentMessage(result.code ?? '') });
+      }
+      // Alipay requires plain-text "success" (not JSON) to stop retries.
+      if (res) {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return 'success';
+      }
+      return 'success';
     }
-    const result = await this.payments.webhook(provider, JSON.stringify(body), timestamp, signature);
+    void contentType;
+    const result = await this.payments.webhook(provider, JSON.stringify(body ?? {}), timestamp, signature);
     if (result.httpStatus >= 400) {
       throw new BadRequestException({ code: result.code, message: userPaymentMessage(result.code ?? '') });
     }
     return { status: result.status, code: result.code ?? null };
   }
+}
+
+function normalizeAlipayNotifyBody(body: Record<string, unknown> | string | null | undefined): Record<string, unknown> {
+  if (!body) return {};
+  if (typeof body === 'string') {
+    const params = new URLSearchParams(body);
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of params.entries()) out[key] = value;
+    return out;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') out[key] = value;
+    else if (value == null) continue;
+    else out[key] = String(value);
+  }
+  return out;
 }
 
 @Controller('admin')
@@ -40,6 +72,8 @@ export class AdminPaymentsController {
   constructor(
     private readonly payments: PaymentService,
     private readonly alipay: AlipayPaymentService,
+    private readonly billingCheckout: BillingCheckoutService,
+    private readonly formal: FormalPaymentReadinessService,
   ) {}
 
   @Get('payments/summary')
@@ -112,9 +146,63 @@ export class AdminPaymentsController {
     return this.alipay.startProductionTest(user.id);
   }
 
+  @Post('payment-providers/alipay/production-test/continue')
+  continueProductionTest(@CurrentUser() user: AuthUser, @Body() body: { paymentId?: string }) {
+    if (!body?.paymentId) {
+      return this.alipay.startProductionTest(user.id);
+    }
+    return this.alipay.continueProductionTestPayment(user.id, body.paymentId);
+  }
+
   @Post('payment-providers/alipay/production-test/disable')
   disablePaymentTest(@CurrentUser() user: AuthUser) {
     return this.alipay.disablePaymentTest(user.id);
+  }
+
+  @Get('commercial/payment-test')
+  paymentTestStatus(@CurrentUser() user: AuthUser) {
+    return this.billingCheckout.paymentTestStatus(user.id);
+  }
+
+  @Get('commercial/payment-controls')
+  paymentControls(@CurrentUser() user: AuthUser) {
+    return this.formal.paymentControls(user.id);
+  }
+
+  @Post('commercial/payment-controls/access')
+  updatePaymentAccess(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { accessMode?: string; percentage?: number; confirmPhrase?: string },
+  ) {
+    return this.formal.updatePaymentAccess(user.id, body ?? {});
+  }
+
+  @Post('commercial/payment-controls/allowlist')
+  addAllowlist(@CurrentUser() user: AuthUser, @Body() body: { workspaceId?: string; note?: string }) {
+    return this.formal.addAllowlist(user.id, body ?? {});
+  }
+
+  @Post('commercial/checkout/dry-run')
+  dryRun(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { workspaceId?: string; planCode?: string; billingCycle?: string },
+  ) {
+    return this.formal.dryRunCheckout(user.id, body ?? {});
+  }
+
+  @Get('commercial/payment-launch-checklist')
+  launchChecklist(@CurrentUser() user: AuthUser) {
+    return this.formal.launchChecklist(user.id);
+  }
+
+  @Get('commercial/payment-consistency')
+  consistency(@CurrentUser() user: AuthUser) {
+    return this.formal.consistencyAudit(user.id);
+  }
+
+  @Post('commercial/mock-activation-matrix')
+  mockMatrix(@CurrentUser() user: AuthUser) {
+    return this.formal.mockActivateMatrix(user.id);
   }
 
   @Post('payments/:id/refund')

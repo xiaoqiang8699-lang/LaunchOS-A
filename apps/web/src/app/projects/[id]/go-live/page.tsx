@@ -11,6 +11,17 @@ import { SERVER_INSTANCE_STATUS_LABELS, SERVER_READY_LABELS } from '@/lib/projec
 import { startProjectDeployment } from '@/lib/start-deploy';
 import type { HostingMode, ProjectDetail, ServerConnectionTest, ServerInstance } from '@/lib/types';
 
+type PreflightSummary = {
+  status: 'PASSED' | 'WARNING' | 'BLOCKED';
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  summary: string;
+  passedCount: number;
+  riskCount: number;
+  recommendations: string[];
+  allowDeploy: boolean;
+  requireConfirm: boolean;
+};
+
 export default function GoLivePage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -23,6 +34,9 @@ export default function GoLivePage() {
   const [checkingId, setCheckingId] = useState<string | null>(null);
   const [checkMessage, setCheckMessage] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [preflight, setPreflight] = useState<PreflightSummary | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [riskAcknowledged, setRiskAcknowledged] = useState(false);
   const [form, setForm] = useState({
     name: '',
     host: '',
@@ -30,6 +44,31 @@ export default function GoLivePage() {
     username: 'root',
     password: '',
   });
+
+  function currentUnitId() {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('unitId');
+  }
+
+  async function loadPreflight(force = false) {
+    setPreflightLoading(true);
+    try {
+      const unitId = currentUnitId();
+      const q = unitId ? `?unitId=${encodeURIComponent(unitId)}` : '';
+      const payload = force
+        ? await api<PreflightSummary>(`/projects/${params.id}/preflight${q}`, {
+            method: 'POST',
+            body: JSON.stringify(unitId ? { unitId } : {}),
+          })
+        : await api<PreflightSummary>(`/projects/${params.id}/preflight${q}`);
+      setPreflight(payload);
+      setRiskAcknowledged(false);
+    } catch {
+      setPreflight(null);
+    } finally {
+      setPreflightLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!getAccessToken()) {
@@ -46,6 +85,7 @@ export default function GoLivePage() {
         setProject(detail);
         setServers(list);
         setServerId((current) => current || list[0]?.id || '');
+        void loadPreflight(true);
       })
       .catch((err: unknown) => {
         if (cancelled) {
@@ -59,11 +99,20 @@ export default function GoLivePage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router]);
 
   const selected = servers.find((item) => item.id === serverId) ?? null;
   const canConfirm =
     hostingMode === 'launchos' || (hostingMode === 'my-server' && Boolean(selected));
+  const preflightBlocks = preflight?.status === 'BLOCKED';
+  const preflightNeedsAck = preflight?.status === 'WARNING' && !riskAcknowledged;
+  const deployDisabled =
+    pending ||
+    !canConfirm ||
+    (project?.sources.length ?? 0) === 0 ||
+    Boolean(preflightBlocks) ||
+    Boolean(preflightNeedsAck);
 
   async function refreshServers(): Promise<ServerInstance[]> {
     const list = await api<ServerInstance[]>('/servers');
@@ -129,13 +178,18 @@ export default function GoLivePage() {
       setError(PRODUCT_COPY.noServersYet);
       return;
     }
+    if (preflightBlocks) {
+      setError('预检发现高风险，请先处理后再上线。');
+      return;
+    }
+    if (preflightNeedsAck) {
+      setError('请先确认已了解预检风险。');
+      return;
+    }
     setPending(true);
     setError(null);
     try {
-      const unitId =
-        typeof window !== 'undefined'
-          ? new URLSearchParams(window.location.search).get('unitId')
-          : null;
+      const unitId = currentUnitId();
       const deploymentId = await startProjectDeployment(params.id, {
         hostingMode,
         serverInstanceId: hostingMode === 'my-server' ? serverId : undefined,
@@ -179,6 +233,67 @@ export default function GoLivePage() {
         {error ? (
           <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         ) : null}
+
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium text-zinc-900">AI部署预检</h2>
+              <p className="mt-1 text-sm text-zinc-500">上线前自动检查配置、依赖与 Docker 风险</p>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700"
+              disabled={preflightLoading}
+              onClick={() => void loadPreflight(true)}
+            >
+              {preflightLoading ? '检查中…' : '重新预检'}
+            </button>
+          </div>
+          {preflight ? (
+            <div className="mt-4 space-y-2 text-sm text-zinc-700">
+              <p>
+                检查项目：通过 {preflight.passedCount} 项
+                {preflight.riskCount > 0 ? ` · 发现风险 ${preflight.riskCount} 项` : ''}
+              </p>
+              <p>
+                风险等级：<span className="font-medium">{preflight.riskLevel}</span> · 状态{' '}
+                <span className="font-medium">{preflight.status}</span>
+              </p>
+              <p className="leading-6">{preflight.summary}</p>
+              {preflight.recommendations[0] ? (
+                <p className="text-zinc-600">建议：{preflight.recommendations[0]}</p>
+              ) : null}
+              {preflight.status === 'WARNING' ? (
+                <label className="mt-2 flex items-start gap-2 text-sm text-zinc-700">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={riskAcknowledged}
+                    onChange={(e) => setRiskAcknowledged(e.target.checked)}
+                  />
+                  <span>我已了解潜在风险，确认继续上线</span>
+                </label>
+              ) : null}
+              {preflight.status === 'BLOCKED' ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  高风险已阻止上线，请处理后再继续。
+                </p>
+              ) : null}
+              <Link
+                className="inline-block text-sm text-zinc-900 underline"
+                href={`/projects/${params.id}/deployments/preflight${
+                  currentUnitId() ? `?unitId=${encodeURIComponent(currentUnitId()!)}` : ''
+                }`}
+              >
+                查看预检详情
+              </Link>
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-zinc-500">
+              {preflightLoading ? '正在预检…' : '暂无预检结果，可点击重新预检。'}
+            </p>
+          )}
+        </section>
 
         <ul className="grid gap-3 sm:grid-cols-2">
           <HostingCard
@@ -376,13 +491,19 @@ export default function GoLivePage() {
         <button
           className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           type="button"
-          disabled={pending || !canConfirm || project.sources.length === 0}
+          disabled={deployDisabled}
           onClick={() => void confirm()}
         >
           {pending ? PRODUCT_COPY.goingLive : PRODUCT_COPY.confirmGoLive}
         </button>
         {project.sources.length === 0 ? (
           <p className="text-sm text-zinc-500">请先连接代码后再上线。</p>
+        ) : null}
+        {preflightBlocks ? (
+          <p className="text-sm text-red-600">预检高风险：请先处理阻塞项。</p>
+        ) : null}
+        {preflightNeedsAck ? (
+          <p className="text-sm text-amber-700">检测到潜在问题，请勾选确认后再上线。</p>
         ) : null}
       </div>
     </main>

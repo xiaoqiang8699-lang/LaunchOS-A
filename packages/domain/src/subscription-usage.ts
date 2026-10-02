@@ -4,10 +4,11 @@ export const SUBSCRIPTION_STATUSES = [
   'ACTIVE',
   'PAST_DUE',
   'CANCEL_AT_PERIOD_END',
+  'GRACE_PERIOD',
   'CANCELED',
   'EXPIRED',
 ] as const;
-export const EFFECTIVE_SUBSCRIPTION_STATUSES = ['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCEL_AT_PERIOD_END'] as const;
+export const EFFECTIVE_SUBSCRIPTION_STATUSES = ['TRIALING', 'ACTIVE', 'PAST_DUE', 'CANCEL_AT_PERIOD_END', 'GRACE_PERIOD'] as const;
 export const NEAR_LIMIT_RATIO = 0.8;
 export const NON_USAGE_DEPLOYMENT_CLASSES = ['DRY_RUN', 'GATE_ONLY', 'PLAN', 'VERIFY_ONLY'] as const;
 export const REAL_DEPLOYMENT_STATUSES = ['RUNNING', 'SUCCESS', 'FAILED'] as const;
@@ -57,6 +58,7 @@ export function subscriptionStatusLabel(status: string): string {
   if (status === 'ACTIVE') return '正常';
   if (status === 'PAST_DUE') return '待处理';
   if (status === 'CANCEL_AT_PERIOD_END') return '到期取消';
+  if (status === 'GRACE_PERIOD') return '宽限期';
   if (status === 'CANCELED') return '已取消';
   if (status === 'EXPIRED') return '已过期';
   return '正常';

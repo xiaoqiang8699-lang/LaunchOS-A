@@ -4,6 +4,7 @@ import { DomainService, DomainServiceError } from '@launchos/deployment';
 import { PrismaService } from '../database/prisma.service';
 import { WorkspaceAccessService } from '../workspaces/workspace-access.service';
 import { EntitlementGovernanceService } from '../billing/entitlement-governance.service';
+import { ProductAnalyticsService } from '../analytics/product-analytics.service';
 import type { CreateDomainDto } from './dto/create-domain.dto';
 
 const domainSelect = {
@@ -38,6 +39,7 @@ export class DomainsService {
     private readonly prisma: PrismaService,
     private readonly workspaceAccess: WorkspaceAccessService,
     private readonly entitlements: EntitlementGovernanceService,
+    private readonly analytics: ProductAnalyticsService,
   ) {
     this.domains = new DomainService(prisma);
   }
@@ -53,26 +55,37 @@ export class DomainsService {
     const type = dto.type ?? (dto.domain ? DomainType.CUSTOM : DomainType.SUBDOMAIN);
 
     try {
+      let result;
       if (type === DomainType.CUSTOM) {
         if (!dto.domain?.trim()) {
           throw new BadRequestException('Custom domain is required');
         }
         await this.entitlements.assertCustomDomain(userId, project.workspaceId);
-        return await this.domains.assignCustomDomain({
+        result = await this.domains.assignCustomDomain({
           projectId: project.id,
           serviceInstanceId: service.id,
           domain: dto.domain,
           target: '127.0.0.1',
         });
+      } else {
+        result = await this.domains.assignDefaultSubdomain({
+          projectId: project.id,
+          projectName: project.name,
+          projectSlug: project.slug,
+          serviceInstanceId: service.id,
+          target: '127.0.0.1',
+        });
       }
-
-      return await this.domains.assignDefaultSubdomain({
-        projectId: project.id,
-        projectName: project.name,
-        projectSlug: project.slug,
-        serviceInstanceId: service.id,
-        target: '127.0.0.1',
-      });
+      void this.analytics
+        .track({
+          event: 'DOMAIN_CONNECTED',
+          userId,
+          workspaceId: project.workspaceId,
+          projectId: project.id,
+          metadata: { type },
+        })
+        .catch(() => undefined);
+      return result;
     } catch (error) {
       if (error instanceof DomainServiceError) {
         throw new ConflictException(error.message);

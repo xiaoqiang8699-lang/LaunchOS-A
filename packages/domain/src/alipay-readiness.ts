@@ -12,22 +12,44 @@ export type AlipayEnvironment = 'SANDBOX' | 'PRODUCTION';
 export const PAYMENT_TEST_PLAN_CODE = 'PAYMENT_TEST';
 export const PAYMENT_TEST_MONTHLY_CENTS = 90;
 
-export function readAlipayGates(env: NodeJS.ProcessEnv = process.env): { realPaymentsEnabled: boolean; alipayProductionEnabled: boolean; alipayProductionTestEnabled: boolean; sandboxOnly: boolean; productionTestWorkspaceId: string | null } {
+export type AlipayGates = {
+  realPaymentsEnabled: boolean;
+  /** Alias of PAYMENT_TEST_REAL_ENABLED / ALIPAY_PRODUCTION_TEST_ENABLED */
+  paymentTestRealEnabled: boolean;
+  /** @deprecated prefer paymentTestRealEnabled — kept for existing callers */
+  alipayProductionTestEnabled: boolean;
+  alipayProductionEnabled: boolean;
+  sandboxOnly: boolean;
+  productionTestWorkspaceId: string | null;
+};
+
+export function readAlipayGates(env: NodeJS.ProcessEnv = process.env): AlipayGates {
   const workspaceId = env.ALIPAY_PRODUCTION_TEST_WORKSPACE_ID?.trim() || null;
+  const paymentTestRealEnabled =
+    env.PAYMENT_TEST_REAL_ENABLED === 'true' || env.ALIPAY_PRODUCTION_TEST_ENABLED === 'true';
   return {
     realPaymentsEnabled: env.REAL_PAYMENTS_ENABLED === 'true',
+    paymentTestRealEnabled,
+    alipayProductionTestEnabled: paymentTestRealEnabled,
     alipayProductionEnabled: env.ALIPAY_PRODUCTION_ENABLED === 'true',
-    alipayProductionTestEnabled: env.ALIPAY_PRODUCTION_TEST_ENABLED === 'true',
     sandboxOnly: env.ALIPAY_SANDBOX_ONLY !== 'false',
     productionTestWorkspaceId: workspaceId,
   };
 }
 
+/**
+ * PRODUCTION checkout has two mutually gated paths:
+ * 1) PAYMENT_TEST (¥0.90) — needs paymentTestRealEnabled only; REAL_PAYMENTS_ENABLED stays false.
+ * 2) Real Pro/Team — needs REAL_PAYMENTS_ENABLED (+ production Alipay gates); not opened in M8-1.
+ */
 export function decideAlipayCheckout(input: {
   actorIsPlatformAdmin: boolean;
   environment: AlipayEnvironment;
   providerStatus: string;
-  gates: { realPaymentsEnabled: boolean; alipayProductionEnabled: boolean; alipayProductionTestEnabled: boolean; sandboxOnly: boolean };
+  gates: Pick<
+    AlipayGates,
+    'realPaymentsEnabled' | 'alipayProductionEnabled' | 'alipayProductionTestEnabled' | 'paymentTestRealEnabled' | 'sandboxOnly'
+  > & { paymentTestRealEnabled?: boolean };
   productionTest?: {
     workspaceId: string;
     allowedWorkspaceId: string | null;
@@ -35,6 +57,8 @@ export function decideAlipayCheckout(input: {
     planStatus: string;
     priceMonthlyCents: number | null;
   } | null;
+  /** When true, this is a real catalog purchase (pro/team), not PAYMENT_TEST. */
+  realCatalogPurchase?: boolean;
 }): { ok: true; isTestPayment: boolean; isProductionTest: boolean } | { ok: false; code: string } {
   if (input.providerStatus === 'DISABLED') return { ok: false, code: 'ALIPAY_DISABLED' };
   if (input.providerStatus !== 'VERIFIED') return { ok: false, code: 'ALIPAY_NOT_VERIFIED' };
@@ -42,17 +66,84 @@ export function decideAlipayCheckout(input: {
     if (!input.actorIsPlatformAdmin) return { ok: false, code: 'ALIPAY_SANDBOX_ADMIN_ONLY' };
     return { ok: true, isTestPayment: true, isProductionTest: false };
   }
+
+  const testGate =
+    input.gates.paymentTestRealEnabled === true || input.gates.alipayProductionTestEnabled === true;
   const test = input.productionTest;
-  if (input.gates.sandboxOnly) return { ok: false, code: 'ALIPAY_SANDBOX_ONLY' };
-  if (!input.gates.realPaymentsEnabled) return { ok: false, code: 'REAL_PAYMENTS_DISABLED' };
-  if (!input.gates.alipayProductionEnabled) return { ok: false, code: 'ALIPAY_PRODUCTION_DISABLED' };
-  if (!input.gates.alipayProductionTestEnabled) return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_DISABLED' };
-  if (!test || !input.actorIsPlatformAdmin) return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_ADMIN_ONLY' };
-  if (!test.allowedWorkspaceId || test.workspaceId !== test.allowedWorkspaceId) return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_WORKSPACE' };
-  if (test.planCode !== PAYMENT_TEST_PLAN_CODE || test.planStatus !== 'INTERNAL_TEST' || test.priceMonthlyCents !== PAYMENT_TEST_MONTHLY_CENTS) {
-    return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_PLAN' };
+
+  // Path A: hidden PAYMENT_TEST production small-amount verification
+  if (test) {
+    if (input.gates.sandboxOnly) return { ok: false, code: 'ALIPAY_SANDBOX_ONLY' };
+    if (!testGate) return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_DISABLED' };
+    if (!input.actorIsPlatformAdmin) return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_ADMIN_ONLY' };
+    if (!test.allowedWorkspaceId || test.workspaceId !== test.allowedWorkspaceId) {
+      return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_WORKSPACE' };
+    }
+    if (
+      test.planCode !== PAYMENT_TEST_PLAN_CODE ||
+      test.planStatus !== 'INTERNAL_TEST' ||
+      test.priceMonthlyCents !== PAYMENT_TEST_MONTHLY_CENTS
+    ) {
+      return { ok: false, code: 'ALIPAY_PRODUCTION_TEST_PLAN' };
+    }
+    // Intentionally does NOT require REAL_PAYMENTS_ENABLED.
+    return { ok: true, isTestPayment: false, isProductionTest: true };
   }
-  return { ok: true, isTestPayment: false, isProductionTest: true };
+
+  // Path B: real catalog purchase (Pro / Team) — closed unless REAL_PAYMENTS_ENABLED.
+  // M8-3: do NOT gate Path B on ALIPAY_SANDBOX_ONLY (legacy business blocker).
+  // Provider environment is selected via ALIPAY_PROVIDER_MODE / account environment separately.
+  if (input.realCatalogPurchase) {
+    if (!input.gates.realPaymentsEnabled) return { ok: false, code: 'REAL_PAYMENTS_DISABLED' };
+    if (!input.gates.alipayProductionEnabled) return { ok: false, code: 'ALIPAY_PRODUCTION_DISABLED' };
+    return { ok: true, isTestPayment: false, isProductionTest: false };
+  }
+
+  return { ok: false, code: 'REAL_PAYMENTS_DISABLED' };
+}
+
+/** Server-authoritative catalog price in fen/cents. Client amount is never trusted. */
+export function resolveCatalogPriceCents(input: {
+  planCode: string;
+  billingCycle: 'MONTHLY' | 'YEARLY' | 'ONE_TIME_TEST';
+  priceMonthly?: number | null;
+  priceYearly?: number | null;
+  priceMonthlyCents?: number | null;
+  priceYearlyCents?: number | null;
+}): { ok: true; amountCents: number } | { ok: false; code: string } {
+  const code = input.planCode.trim().toLowerCase() === 'payment_test' ? PAYMENT_TEST_PLAN_CODE : input.planCode;
+  if (code === PAYMENT_TEST_PLAN_CODE || input.billingCycle === 'ONE_TIME_TEST') {
+    return { ok: true, amountCents: PAYMENT_TEST_MONTHLY_CENTS };
+  }
+  if (input.billingCycle === 'MONTHLY') {
+    if (input.priceMonthlyCents != null && Number.isFinite(input.priceMonthlyCents)) {
+      return { ok: true, amountCents: Math.trunc(input.priceMonthlyCents) };
+    }
+    if (input.priceMonthly != null && Number.isFinite(input.priceMonthly)) {
+      return { ok: true, amountCents: Math.trunc(input.priceMonthly) * 100 };
+    }
+    return { ok: false, code: 'PLAN_PRICE_MISSING' };
+  }
+  if (input.billingCycle === 'YEARLY') {
+    if (input.priceYearlyCents != null && Number.isFinite(input.priceYearlyCents)) {
+      return { ok: true, amountCents: Math.trunc(input.priceYearlyCents) };
+    }
+    if (input.priceYearly != null && Number.isFinite(input.priceYearly)) {
+      return { ok: true, amountCents: Math.trunc(input.priceYearly) * 100 };
+    }
+    return { ok: false, code: 'PLAN_PRICE_MISSING' };
+  }
+  return { ok: false, code: 'BILLING_CYCLE_INVALID' };
+}
+
+export function normalizeBillingCycle(raw: string | undefined | null): 'MONTHLY' | 'YEARLY' | 'ONE_TIME_TEST' | null {
+  const value = String(raw ?? '')
+    .trim()
+    .toUpperCase();
+  if (value === 'MONTHLY' || value === 'MONTH') return 'MONTHLY';
+  if (value === 'YEARLY' || value === 'YEAR' || value === 'ANNUAL') return 'YEARLY';
+  if (value === 'ONE_TIME_TEST' || value === 'TEST') return 'ONE_TIME_TEST';
+  return null;
 }
 
 export function canProcessExistingAlipayPayment(status: string): boolean {

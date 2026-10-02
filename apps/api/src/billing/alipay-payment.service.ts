@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import { AlipayPaymentProvider } from '@launchos/providers';
+import { AlipayPaymentProvider, alipayKeyFingerprints, inspectPagePayUrl, requestSignIncludesSignType } from '@launchos/providers';
 import { decryptCredential, encryptCredential } from '@launchos/shared';
 import {
   alipayConfigComplete,
@@ -126,20 +126,23 @@ export class AlipayPaymentService {
     if (!order?.plan) throw new BadRequestException({ code: 'PAYMENT_NOT_FOUND', message: userPaymentMessage('PAYMENT_NOT_FOUND') });
     const account = await this.account(environment);
     const gates = readAlipayGates();
+    const isPaymentTest = order.plan.code === 'PAYMENT_TEST';
     const decision = decideAlipayCheckout({
       actorIsPlatformAdmin: user,
       environment,
       providerStatus: account?.status ?? 'UNCONFIGURED',
       gates,
-      productionTest: environment === 'PRODUCTION'
-        ? {
-            workspaceId: order.workspaceId,
-            allowedWorkspaceId: gates.productionTestWorkspaceId,
-            planCode: order.plan.code,
-            planStatus: order.plan.status,
-            priceMonthlyCents: order.planVersion?.priceMonthlyCents ?? order.plan.priceMonthlyCents,
-          }
-        : null,
+      productionTest:
+        environment === 'PRODUCTION' && isPaymentTest
+          ? {
+              workspaceId: order.workspaceId,
+              allowedWorkspaceId: gates.productionTestWorkspaceId,
+              planCode: order.plan.code,
+              planStatus: order.plan.status,
+              priceMonthlyCents: order.planVersion?.priceMonthlyCents ?? order.plan.priceMonthlyCents,
+            }
+          : null,
+      realCatalogPurchase: environment === 'PRODUCTION' && !isPaymentTest,
     });
     if (!decision.ok) throw new ForbiddenException({ code: decision.code, message: userPaymentMessage(decision.code) });
     const created = await createAlipayCheckout(this.prisma, { orderId, actorId: adminId, environment, isTestPayment: decision.isTestPayment, isProductionTest: decision.isProductionTest, clientAmount: body.amount });
@@ -149,6 +152,21 @@ export class AlipayPaymentService {
     const checkout = provider.createCheckout({ merchantOrderNo: created.merchantOrderNo, amountCents: created.amountCents, subject: decision.isProductionTest ? 'LaunchOS 支付联调' : 'LaunchOS 套餐' });
     await this.prisma.payment.update({ where: { id: created.payment.id }, data: { providerRequestId: checkout.requestId, providerCheckoutId: created.merchantOrderNo } });
     await this.prisma.paymentProviderAccount.update({ where: { id: account!.id }, data: { lastSuccessAt: new Date(), lastErrorCode: null } });
+    try {
+      const cfg = this.configFromAccount(account!);
+      // Safe diagnostics only — never log private key or full signature
+      console.info('[alipay-checkout-safe]', {
+        paymentId: created.payment.id,
+        merchantOrderNo: created.merchantOrderNo,
+        amountCents: created.amountCents,
+        environment,
+        requestSignIncludesSignType: requestSignIncludesSignType(),
+        checkoutInspect: inspectPagePayUrl(checkout.checkoutUrl),
+        keyFingerprints: alipayKeyFingerprints(cfg),
+      });
+    } catch {
+      /* ignore diagnostic failures */
+    }
     return {
       paymentId: created.payment.id,
       orderId,
@@ -161,7 +179,62 @@ export class AlipayPaymentService {
       isTestPayment: decision.isTestPayment,
       isProductionTest: decision.isProductionTest,
       ignoredClientAmount: created.ignoredClientAmount,
+      reused: created.reused === true,
     };
+  }
+
+  /**
+   * User catalog checkout (Pro/Team). Caller must already enforce REAL_PAYMENTS_ENABLED.
+   * Never used for PAYMENT_TEST.
+   */
+  async userCatalogCheckout(userId: string, orderId: string, _opts?: { amountCents?: number }) {
+    const order = await this.visibleOrder(userId, orderId);
+    if (!order.plan || order.plan.code === 'PAYMENT_TEST' || order.plan.status === 'INTERNAL_TEST') {
+      throw new ForbiddenException({ code: 'PAYMENT_TEST_FORBIDDEN', message: '该套餐不能通过普通结账购买' });
+    }
+    const gates = readAlipayGates();
+    const account = await this.account('PRODUCTION');
+    const decision = decideAlipayCheckout({
+      actorIsPlatformAdmin: false,
+      environment: 'PRODUCTION',
+      providerStatus: account?.status ?? 'UNCONFIGURED',
+      gates,
+      realCatalogPurchase: true,
+    });
+    if (!decision.ok) throw new ForbiddenException({ code: decision.code, message: userPaymentMessage(decision.code) });
+    const created = await createAlipayCheckout(this.prisma, {
+      orderId,
+      actorId: userId,
+      environment: 'PRODUCTION',
+      isTestPayment: false,
+      isProductionTest: false,
+      clientAmount: null,
+    });
+    if (!created.ok) throw new BadRequestException({ code: created.code, message: userPaymentMessage(created.code) });
+    const provider = account ? this.providerFor(account) : null;
+    if (!provider || !created.merchantOrderNo) {
+      throw new BadRequestException({ code: 'ALIPAY_NOT_VERIFIED', message: userPaymentMessage('ALIPAY_NOT_VERIFIED') });
+    }
+    const checkout = provider.createCheckout({
+      merchantOrderNo: created.merchantOrderNo,
+      amountCents: created.amountCents,
+      subject: `LaunchOS ${order.plan.name}`,
+    });
+    await this.prisma.payment.update({
+      where: { id: created.payment.id },
+      data: { providerRequestId: checkout.requestId, providerCheckoutId: created.merchantOrderNo },
+    });
+    return {
+      paymentId: created.payment.id,
+      orderId,
+      checkoutUrl: checkout.checkoutUrl,
+      amountCents: created.amountCents,
+      merchantOrderNo: created.merchantOrderNo,
+    };
+  }
+
+  async assertPlatformAdmin(userId: string) {
+    return this.requireAdmin(userId);
   }
 
   async notification(body: Record<string, unknown>) {
@@ -272,15 +345,145 @@ export class AlipayPaymentService {
     if (!provider || !account) return { state: 'UNKNOWN_PENDING' as const };
     const result = await provider.getCheckoutStatus(payment.merchantOrderNo);
     await this.prisma.payment.update({ where: { id: payment.id }, data: { lastQueriedAt: new Date(), lastQueryState: result.state } });
-    if (result.state === 'UNKNOWN_PENDING') return result;
+    if (result.state === 'UNKNOWN_PENDING' || result.state === 'TRADE_NOT_EXIST') return result;
     return { ...result, appId: account.appId, eventId: `trade-query:${payment.merchantOrderNo}:${result.state}` };
+  }
+
+  /**
+   * Query Alipay for workspace PAYMENT_TEST pendings.
+   * TRADE_NOT_EXIST → local FAILED (ghost from invalid-signature).
+   * WAIT_BUYER_PAY → reusable.
+   * Never marks PAID here without applyWebhookEvent.
+   */
+  async syncPaymentTestPendings(workspaceId: string) {
+    const account = await this.account('PRODUCTION');
+    const provider = account ? this.providerFor(account) : null;
+    const pendings = await this.prisma.payment.findMany({
+      where: {
+        workspaceId,
+        provider: 'ALIPAY',
+        isProductionTest: true,
+        status: { in: ['PENDING', 'PROCESSING'] },
+      },
+      include: { order: { include: { plan: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const summary = {
+      pendingBefore: pendings.length,
+      tradeExists: 0,
+      tradeNotExist: 0,
+      closedOrFailed: 0,
+      reusable: [] as Array<{
+        paymentId: string;
+        orderId: string;
+        outTradeNo: string;
+        amountCents: number;
+        createdAt: string;
+        orderNumber: string | null;
+      }>,
+      unknown: 0,
+      succeededApplied: 0,
+    };
+    if (!provider) {
+      return { ...summary, providerReady: false as const };
+    }
+    for (const payment of pendings) {
+      if (!payment.merchantOrderNo) continue;
+      const result = await provider.getCheckoutStatus(payment.merchantOrderNo);
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { lastQueriedAt: new Date(), lastQueryState: result.state },
+      });
+      if (result.state === 'TRADE_NOT_EXIST') {
+        summary.tradeNotExist += 1;
+        summary.closedOrFailed += 1;
+        await this.prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'FAILED',
+            failureCode: 'PROVIDER_TRADE_NOT_CREATED_INVALID_SIGNATURE',
+            failureMessageSafe: '支付宝侧未创建交易',
+            lastQueryState: 'TRADE_NOT_EXIST',
+            lastQueriedAt: new Date(),
+          },
+        });
+        await this.prisma.commercialOrder.updateMany({
+          where: { id: payment.orderId, status: { in: ['DRAFT', 'PENDING_PAYMENT'] } },
+          data: { status: 'PAYMENT_FAILED' },
+        });
+        continue;
+      }
+      if (result.state === 'PENDING') {
+        summary.tradeExists += 1;
+        summary.reusable.push({
+          paymentId: payment.id,
+          orderId: payment.orderId,
+          outTradeNo: payment.merchantOrderNo,
+          amountCents: payment.amountCents ?? 90,
+          createdAt: payment.createdAt.toISOString(),
+          orderNumber: payment.order.orderNumber ?? null,
+        });
+        continue;
+      }
+      if (result.state === 'SUCCEEDED' || result.state === 'FAILED' || result.state === 'CANCELED') {
+        if (result.state === 'SUCCEEDED') summary.succeededApplied += 1;
+        else summary.closedOrFailed += 1;
+        const eventName =
+          result.state === 'SUCCEEDED' ? 'PAYMENT_SUCCEEDED' : result.state === 'CANCELED' ? 'PAYMENT_CANCELED' : 'PAYMENT_FAILED';
+        await applyWebhookEvent(this.prisma, {
+          provider: 'ALIPAY',
+          rawBody: `trade-query:${payment.merchantOrderNo}:${result.state}`,
+          verified: {
+            eventName,
+            externalEventId: `trade-query:${payment.merchantOrderNo}:${result.state}:${Date.now()}`,
+            merchantOrderNo: ('merchantOrderNo' in result && result.merchantOrderNo) || payment.merchantOrderNo,
+            amountCents: 'amountCents' in result ? result.amountCents : payment.amountCents ?? 90,
+            currency: 'currency' in result ? result.currency : payment.currency,
+            providerTradeNo: 'providerTradeNo' in result ? result.providerTradeNo : null,
+            actualAppId: account?.appId ?? null,
+          },
+        });
+        continue;
+      }
+      summary.unknown += 1;
+    }
+    return { ...summary, providerReady: true as const };
+  }
+
+  async continueProductionTestPayment(adminId: string, paymentId: string) {
+    await this.requireAdmin(adminId);
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { order: { include: { plan: true } } },
+    });
+    if (!payment || !payment.isProductionTest || payment.provider !== 'ALIPAY' || !payment.merchantOrderNo) {
+      throw new BadRequestException({ code: 'PAYMENT_NOT_FOUND', message: userPaymentMessage('PAYMENT_NOT_FOUND') });
+    }
+    if (payment.status !== 'PENDING' && payment.status !== 'PROCESSING') {
+      throw new BadRequestException({ code: 'LAST_PAYMENT_STATE_INVALID', message: '该测试订单不可继续支付' });
+    }
+    const gates = readAlipayGates();
+    if (payment.workspaceId !== gates.productionTestWorkspaceId) {
+      throw new ForbiddenException({ code: 'ALIPAY_PRODUCTION_TEST_WORKSPACE', message: userPaymentMessage('ALIPAY_PRODUCTION_TEST_WORKSPACE') });
+    }
+    const sync = await this.syncPaymentTestPendings(payment.workspaceId);
+    const still = sync.reusable.find((item) => item.paymentId === payment.id);
+    if (!still) {
+      throw new BadRequestException({ code: 'LAST_PAYMENT_STATE_INVALID', message: '支付宝侧不存在待支付交易，请创建新的测试订单' });
+    }
+    return this.checkout(adminId, payment.orderId, { environment: 'PRODUCTION' });
   }
 
   async startProductionTest(adminId: string) {
     await this.requireAdmin(adminId);
     const gates = readAlipayGates();
-    const plan = await this.prisma.plan.findUnique({ where: { code: 'PAYMENT_TEST' }, include: { versions: { where: { effectiveTo: null }, orderBy: { version: 'desc' }, take: 1 } } });
-    if (!plan || plan.status !== 'INTERNAL_TEST') throw new ForbiddenException({ code: 'ALIPAY_PRODUCTION_TEST_PLAN', message: userPaymentMessage('ALIPAY_PRODUCTION_TEST_PLAN') });
+    const plan = await this.prisma.plan.findUnique({
+      where: { code: 'PAYMENT_TEST' },
+      include: { versions: { where: { effectiveTo: null }, orderBy: { version: 'desc' }, take: 1 } },
+    });
+    if (!plan || plan.status !== 'INTERNAL_TEST') {
+      throw new ForbiddenException({ code: 'ALIPAY_PRODUCTION_TEST_PLAN', message: userPaymentMessage('ALIPAY_PRODUCTION_TEST_PLAN') });
+    }
     const version = plan.versions[0] ?? null;
     const workspaceId = gates.productionTestWorkspaceId;
     const decision = decideAlipayCheckout({
@@ -296,9 +499,24 @@ export class AlipayPaymentService {
         priceMonthlyCents: version?.priceMonthlyCents ?? plan.priceMonthlyCents,
       },
     });
-    if (!decision.ok || !workspaceId) throw new ForbiddenException({ code: decision.ok ? 'ALIPAY_PRODUCTION_TEST_WORKSPACE' : decision.code, message: userPaymentMessage(decision.ok ? 'ALIPAY_PRODUCTION_TEST_WORKSPACE' : decision.code) });
+    if (!decision.ok || !workspaceId) {
+      throw new ForbiddenException({
+        code: decision.ok ? 'ALIPAY_PRODUCTION_TEST_WORKSPACE' : decision.code,
+        message: userPaymentMessage(decision.ok ? 'ALIPAY_PRODUCTION_TEST_WORKSPACE' : decision.code),
+      });
+    }
     const workspace = await this.prisma.workspace.findUnique({ where: { id: workspaceId }, select: { id: true } });
-    if (!workspace) throw new ForbiddenException({ code: 'ALIPAY_PRODUCTION_TEST_WORKSPACE', message: userPaymentMessage('ALIPAY_PRODUCTION_TEST_WORKSPACE') });
+    if (!workspace) {
+      throw new ForbiddenException({ code: 'ALIPAY_PRODUCTION_TEST_WORKSPACE', message: userPaymentMessage('ALIPAY_PRODUCTION_TEST_WORKSPACE') });
+    }
+
+    const sync = await this.syncPaymentTestPendings(workspaceId);
+    if (sync.reusable.length > 0) {
+      const latest = sync.reusable[0]!;
+      const reused = await this.checkout(adminId, latest.orderId, { environment: 'PRODUCTION' });
+      return { ...reused, reused: true as const };
+    }
+
     const orderNumber = `LO-TEST-${Date.now().toString(36).toUpperCase()}`;
     const order = await this.prisma.commercialOrder.create({
       data: {
@@ -319,7 +537,8 @@ export class AlipayPaymentService {
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     });
-    return this.checkout(adminId, order.id, { environment: 'PRODUCTION', amount: 99 });
+    const created = await this.checkout(adminId, order.id, { environment: 'PRODUCTION', amount: 99 });
+    return { ...created, reused: false as const };
   }
 
   async disablePaymentTest(adminId: string) {
@@ -373,23 +592,24 @@ export class AlipayPaymentService {
     });
   }
 
+  private configFromAccount(account: AccountRecord) {
+    const privateKey = decryptCredential(account.credentialEncrypted!);
+    return {
+      appId: account.appId!,
+      gatewayUrl: account.gatewayUrl!,
+      privateKey,
+      alipayPublicKey: account.publicKey!,
+      notifyUrl: account.notifyUrl!,
+      returnUrl: account.returnUrl!,
+    };
+  }
+
   private providerFor(account: AccountRecord): AlipayPaymentProvider | null {
     if (!account.appId || !account.gatewayUrl || !account.publicKey || !account.credentialEncrypted || !account.notifyUrl || !account.returnUrl) return null;
-    let privateKey = '';
     try {
-      privateKey = decryptCredential(account.credentialEncrypted);
-      return new AlipayPaymentProvider({
-        appId: account.appId,
-        gatewayUrl: account.gatewayUrl,
-        privateKey,
-        alipayPublicKey: account.publicKey,
-        notifyUrl: account.notifyUrl,
-        returnUrl: account.returnUrl,
-      });
+      return new AlipayPaymentProvider(this.configFromAccount(account));
     } catch {
       return null;
-    } finally {
-      privateKey = '';
     }
   }
 

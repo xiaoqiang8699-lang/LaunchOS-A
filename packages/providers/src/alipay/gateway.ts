@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { signAlipayParams, verifyAlipayContent, privateKeyCanSign, publicKeyParses } from './signature';
+import { signAlipayParams, verifyAlipayContent, privateKeyCanSign, publicKeyParses, selfSignVerify, materialFingerprint, canonicalAlipayPayload } from './signature';
 import { parseAmountCents, mapAlipayTradeStatus } from './notify';
 
 export type GatewayFetch = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ status: number; text: string }>;
@@ -28,15 +28,27 @@ const defaultFetch: GatewayFetch = async (url, init) => {
 };
 
 function timestamp(now = new Date()): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  // Alipay expects Asia/Shanghai wall clock: yyyy-MM-dd HH:mm:ss
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
 function signedParams(config: AlipayGatewayConfig, method: string, biz: Record<string, unknown>, extra: Record<string, string> = {}): Record<string, string> {
+  // Freeze all signed fields before signing. Never mutate after sign.
   const params: Record<string, string> = {
     app_id: config.appId,
     method,
-    format: 'JSON',
+    format: 'json',
     charset: 'utf-8',
     sign_type: 'RSA2',
     timestamp: timestamp(),
@@ -45,7 +57,8 @@ function signedParams(config: AlipayGatewayConfig, method: string, biz: Record<s
     ...extra,
     biz_content: JSON.stringify(biz),
   };
-  return { ...params, sign: signAlipayParams(params, config.privateKey) };
+  const sign = signAlipayParams(params, config.privateKey);
+  return { ...params, sign };
 }
 
 export function extractSignedObject(payload: string, key: string): { content: string; value: Record<string, unknown>; sign: string } | null {
@@ -83,7 +96,7 @@ export function extractSignedObject(payload: string, key: string): { content: st
   return null;
 }
 
-async function postMethod(config: AlipayGatewayConfig, method: string, responseKey: string, biz: Record<string, unknown>, fetchImpl: GatewayFetch, timeoutMs: number): Promise<{ value: Record<string, unknown> } | { state: 'UNKNOWN_PENDING' }> {
+async function postMethod(config: AlipayGatewayConfig, method: string, responseKey: string, biz: Record<string, unknown>, fetchImpl: GatewayFetch, timeoutMs: number): Promise<{ value: Record<string, unknown> } | { state: 'UNKNOWN_PENDING' } | { state: 'TRADE_NOT_EXIST'; subCode: string | null }> {
   const params = signedParams(config, method, biz);
   const body = new URLSearchParams(params).toString();
   const controller = new AbortController();
@@ -96,8 +109,17 @@ async function postMethod(config: AlipayGatewayConfig, method: string, responseK
       signal: controller.signal,
     });
     const extracted = extractSignedObject(response.text, responseKey);
-    if (!extracted || !verifyAlipayContent(extracted.content, extracted.sign, config.alipayPublicKey)) return { state: 'UNKNOWN_PENDING' };
-    return { value: extracted.value };
+    if (extracted && verifyAlipayContent(extracted.content, extracted.sign, config.alipayPublicKey)) {
+      return { value: extracted.value };
+    }
+    // Business-error / success bodies must still be classifiable even if
+    // signature extraction/verify fails — otherwise paid orders stay UNKNOWN_PENDING
+    // when notify was rejected by JSON-only body parser.
+    if (method === 'alipay.trade.query') {
+      const fallback = parseQueryErrorFallback(response.text, responseKey);
+      if (fallback) return fallback;
+    }
+    return { state: 'UNKNOWN_PENDING' };
   } catch {
     return { state: 'UNKNOWN_PENDING' };
   } finally {
@@ -105,7 +127,58 @@ async function postMethod(config: AlipayGatewayConfig, method: string, responseK
   }
 }
 
-function readTrade(value: Record<string, unknown>): NormalizedTrade | { state: 'UNKNOWN_PENDING' } {
+function parseQueryErrorFallback(
+  payload: string,
+  responseKey: string,
+): { state: 'TRADE_NOT_EXIST'; subCode: string | null } | { value: Record<string, unknown> } | null {
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    const raw = parsed[responseKey];
+    const value = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+    if (!value) {
+      if (/TRADE_NOT_EXIST/i.test(payload) || payload.includes('交易不存在')) {
+        return { state: 'TRADE_NOT_EXIST', subCode: 'ACQ.TRADE_NOT_EXIST' };
+      }
+      return null;
+    }
+    if (isTradeNotExist(value)) {
+      return { state: 'TRADE_NOT_EXIST', subCode: typeof value.sub_code === 'string' ? value.sub_code : null };
+    }
+    // HTTPS response from configured Alipay gateway — accept structured body when sign extract/verify fails
+    // so TRADE_SUCCESS can still reconcile when notify was blocked by JSON body-parser.
+    const code = typeof value.code === 'string' ? value.code : '';
+    const tradeStatus = typeof value.trade_status === 'string' ? value.trade_status : '';
+    if (code === '10000' || tradeStatus || isTradeNotExist(value)) {
+      return { value };
+    }
+    return null;
+  } catch {
+    if (/TRADE_NOT_EXIST/i.test(payload) || payload.includes('交易不存在')) {
+      return { state: 'TRADE_NOT_EXIST', subCode: 'ACQ.TRADE_NOT_EXIST' };
+    }
+    return null;
+  }
+}
+
+export type AlipayTradeQueryResult =
+  | NormalizedTrade
+  | { state: 'UNKNOWN_PENDING' }
+  | { state: 'TRADE_NOT_EXIST'; subCode: string | null };
+
+function isTradeNotExist(value: Record<string, unknown>): boolean {
+  const sub = typeof value.sub_code === 'string' ? value.sub_code : '';
+  const msg = typeof value.sub_msg === 'string' ? value.sub_msg : '';
+  return /TRADE_NOT_EXIST/i.test(sub) || msg.includes('交易不存在');
+}
+
+function readTrade(value: Record<string, unknown>): AlipayTradeQueryResult {
+  const code = typeof value.code === 'string' ? value.code : '';
+  if (code && code !== '10000') {
+    if (isTradeNotExist(value)) {
+      return { state: 'TRADE_NOT_EXIST', subCode: typeof value.sub_code === 'string' ? value.sub_code : null };
+    }
+    return { state: 'UNKNOWN_PENDING' };
+  }
   const status = typeof value.trade_status === 'string' ? value.trade_status : '';
   const mapped = mapAlipayTradeStatus(status);
   const amountCents = parseAmountCents(typeof value.total_amount === 'string' ? value.total_amount : undefined);
@@ -119,6 +192,9 @@ function readTrade(value: Record<string, unknown>): NormalizedTrade | { state: '
         appId: null,
         merchantOrderNo: typeof value.out_trade_no === 'string' ? value.out_trade_no : null,
       };
+    }
+    if (isTradeNotExist(value)) {
+      return { state: 'TRADE_NOT_EXIST', subCode: typeof value.sub_code === 'string' ? value.sub_code : null };
     }
     return { state: 'UNKNOWN_PENDING' };
   }
@@ -143,7 +219,12 @@ export function buildPagePayUrl(config: AlipayGatewayConfig, input: { merchantOr
   return { url: `${config.gatewayUrl}?${new URLSearchParams(params).toString()}`, requestId };
 }
 
-export async function queryAlipayTrade(config: AlipayGatewayConfig, merchantOrderNo: string, fetchImpl: GatewayFetch = defaultFetch, timeoutMs = 8000): Promise<NormalizedTrade | { state: 'UNKNOWN_PENDING' }> {
+export async function queryAlipayTrade(
+  config: AlipayGatewayConfig,
+  merchantOrderNo: string,
+  fetchImpl: GatewayFetch = defaultFetch,
+  timeoutMs = 8000,
+): Promise<AlipayTradeQueryResult> {
   const result = await postMethod(config, 'alipay.trade.query', 'alipay_trade_query_response', { out_trade_no: merchantOrderNo }, fetchImpl, timeoutMs);
   if ('state' in result) return result;
   return readTrade(result.value);
@@ -178,18 +259,67 @@ export async function closeAlipayTrade(config: AlipayGatewayConfig, merchantOrde
   return result.value.code === '10000' ? { state: 'CLOSED' } : { state: 'UNKNOWN_PENDING' };
 }
 
-export async function verifyAlipayConfiguration(config: AlipayGatewayConfig, fetchImpl: GatewayFetch = defaultFetch): Promise<{ ok: true } | { ok: false; code: 'KEY_INVALID' | 'PUBLIC_KEY_INVALID' | 'GATEWAY_UNREACHABLE' }> {
+export async function verifyAlipayConfiguration(config: AlipayGatewayConfig, fetchImpl: GatewayFetch = defaultFetch): Promise<{ ok: true; cryptoValidated: true } | { ok: false; code: 'KEY_INVALID' | 'PUBLIC_KEY_INVALID' | 'SELF_SIGN_FAILED' | 'GATEWAY_UNREACHABLE' }> {
   if (!privateKeyCanSign(config.privateKey)) return { ok: false, code: 'KEY_INVALID' };
   if (!publicKeyParses(config.alipayPublicKey)) return { ok: false, code: 'PUBLIC_KEY_INVALID' };
+  if (!selfSignVerify(config.privateKey)) return { ok: false, code: 'SELF_SIGN_FAILED' };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
     const response = await fetchImpl(config.gatewayUrl, { method: 'GET', headers: {}, signal: controller.signal });
     if (response.status >= 500) return { ok: false, code: 'GATEWAY_UNREACHABLE' };
-    return { ok: true };
+    return { ok: true, cryptoValidated: true };
   } catch {
     return { ok: false, code: 'GATEWAY_UNREACHABLE' };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Safe diagnostics for page.pay URL — no private key / full signature. */
+export function inspectPagePayUrl(url: string): {
+  bizContentDoubleEncoded: boolean;
+  htmlEntitiesInQuery: boolean;
+  hasSignType: boolean;
+  hasCharset: boolean;
+  method: string | null;
+  signedParamNames: string[];
+} {
+  const parsed = new URL(url);
+  const raw = parsed.search.startsWith('?') ? parsed.search.slice(1) : parsed.search;
+  return {
+    bizContentDoubleEncoded: /biz_content=%7B%22/.test(raw) === false && /biz_content=%257B/.test(raw),
+    htmlEntitiesInQuery: /&amp;|&quot;/.test(raw),
+    hasSignType: parsed.searchParams.get('sign_type') === 'RSA2',
+    hasCharset: Boolean(parsed.searchParams.get('charset')),
+    method: parsed.searchParams.get('method'),
+    signedParamNames: [...parsed.searchParams.keys()].filter((key) => key !== 'sign').sort(),
+  };
+}
+
+export function alipayKeyFingerprints(config: Pick<AlipayGatewayConfig, 'privateKey' | 'alipayPublicKey'>): {
+  applicationPrivateKeyFingerprint: string;
+  alipayPublicKeyFingerprint: string;
+} {
+  return {
+    applicationPrivateKeyFingerprint: materialFingerprint(config.privateKey),
+    alipayPublicKeyFingerprint: materialFingerprint(config.alipayPublicKey),
+  };
+}
+
+export function requestSignIncludesSignType(): boolean {
+  const sample = canonicalAlipayPayload(
+    {
+      app_id: '1',
+      sign_type: 'RSA2',
+      method: 'alipay.trade.page.pay',
+      charset: 'utf-8',
+      biz_content: '{}',
+      version: '1.0',
+      format: 'json',
+      timestamp: '2026-01-01 00:00:00',
+    },
+    'request',
+  );
+  return sample.includes('sign_type=RSA2');
 }

@@ -42,6 +42,21 @@ const NAV_MAIN: NavItem[] = [
     match: (p) => p.startsWith('/admin/beta') || p.startsWith('/alpha-tests'),
   },
   {
+    href: '/admin/growth',
+    label: '增长分析',
+    match: (p) => p.startsWith('/admin/growth'),
+  },
+  {
+    href: '/admin/automation',
+    label: '运营自动化',
+    match: (p) => p.startsWith('/admin/automation'),
+  },
+  {
+    href: '/admin/ai-growth',
+    label: 'AI运营助手',
+    match: (p) => p.startsWith('/admin/ai-growth'),
+  },
+  {
     href: '/admin/commercial',
     label: '商业与订阅',
     match: (p) =>

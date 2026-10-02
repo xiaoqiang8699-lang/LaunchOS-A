@@ -38,10 +38,82 @@ type Detail = {
   alphaSessions: Array<{ id: string; sessionStatus: string; createdAt: string }>;
 };
 
+type Health = {
+  firstSeenAt: string;
+  lastActiveAt: string;
+  projectCount: number;
+  deploySuccessCount: number;
+  plan: { code: string; name: string };
+  healthStatus: 'ACTIVE' | 'NEEDS_ATTENTION' | 'DORMANT';
+  healthLabel: string;
+  recentEvents: Array<{ id: string; eventType: string; createdAt: string }>;
+};
+
+type Lifecycle = {
+  statusCode: string;
+  statusLabel: string;
+  tags: Array<{ id: string; tag: string; source: string; createdAt: string }>;
+  reason: string | null;
+  plan: { code: string; name: string };
+  projectCount: number;
+  deploySuccessCount: number;
+  lastFailedDeploy: { errorMessage: string | null; failureCode: string | null; createdAt: string } | null;
+  timeline: Array<{ id: string; eventType: string; label: string; createdAt: string }>;
+  triggeredRules: Array<{
+    id: string;
+    ruleId: string | null;
+    ruleName: string | null;
+    actionType: string;
+    status: string;
+    createdAt: string;
+  }>;
+};
+
+type AiInsight = {
+  profile: {
+    type: string;
+    plan: string;
+    planCode: string;
+    projectCount: number;
+    deploySuccessCount: number;
+    deployFailedCount: number;
+    tags: string[];
+  };
+  currentStage: string;
+  risks: Array<{ code: string; title: string; detail?: string }>;
+  suggestions: string[];
+  note?: string;
+};
+
+type ActivationDetail = {
+  stage: string;
+  stageLabel: string;
+  status: string;
+  statusLabel: string;
+  score: number;
+  primaryBlocker: string | null;
+  blockerLabel: string | null;
+  explanation: unknown;
+  timestamps: {
+    firstProjectAt: string | null;
+    firstDeployStartedAt: string | null;
+    firstDeploySucceededAt: string | null;
+    firstPublicSuccessAt: string | null;
+    activatedAt: string | null;
+    lastProgressAt: string | null;
+  };
+  timeline: Array<{ label: string; stage: string; at: string }>;
+  nextActions: Array<{ title: string; href: string | null; reason: string }>;
+};
+
 export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [health, setHealth] = useState<Health | null>(null);
+  const [lifecycle, setLifecycle] = useState<Lifecycle | null>(null);
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [activation, setActivation] = useState<ActivationDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
@@ -63,6 +135,18 @@ export default function AdminUserDetailPage() {
         setAdminNote(payload.profile.adminNote ?? '');
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '加载失败'));
+    void api<Health>(`/admin/users/${params.id}/health`)
+      .then(setHealth)
+      .catch(() => setHealth(null));
+    void api<Lifecycle>(`/admin/users/${params.id}/lifecycle`)
+      .then(setLifecycle)
+      .catch(() => setLifecycle(null));
+    void api<AiInsight>(`/admin/users/${params.id}/ai-insight`)
+      .then(setAiInsight)
+      .catch(() => setAiInsight(null));
+    void api<ActivationDetail>(`/admin/users/${params.id}/activation`)
+      .then(setActivation)
+      .catch(() => setActivation(null));
   }, [params.id]);
 
   async function reload(): Promise<void> {
@@ -168,6 +252,196 @@ export default function AdminUserDetailPage() {
         </label>
         <button className="mt-3 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm text-white" type="button" onClick={() => void save()}>保存</button>
       </section>
+
+      {activation ? (
+        <section className="rounded-xl border border-zinc-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-medium">激活状态</h2>
+            <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
+              {activation.status} · {activation.statusLabel} · 分数 {activation.score}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm text-zinc-600 sm:grid-cols-2">
+            <p>当前阶段 {activation.stageLabel} ({activation.stage})</p>
+            <p>主要阻塞 {activation.blockerLabel || activation.primaryBlocker || '—'}</p>
+            <p>首次项目 {activation.timestamps.firstProjectAt ? new Date(activation.timestamps.firstProjectAt).toLocaleString() : '—'}</p>
+            <p>首次部署 {activation.timestamps.firstDeployStartedAt ? new Date(activation.timestamps.firstDeployStartedAt).toLocaleString() : '—'}</p>
+            <p>首次成功 {activation.timestamps.firstDeploySucceededAt ? new Date(activation.timestamps.firstDeploySucceededAt).toLocaleString() : '—'}</p>
+            <p>公网成功 {activation.timestamps.firstPublicSuccessAt ? new Date(activation.timestamps.firstPublicSuccessAt).toLocaleString() : '—'}</p>
+          </div>
+          {Array.isArray(activation.explanation) && activation.explanation.length > 0 ? (
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-zinc-500">
+              {activation.explanation.map((line, i) => (
+                <li key={i}>{String(line)}</li>
+              ))}
+            </ul>
+          ) : null}
+          <h3 className="mt-4 text-sm font-medium text-zinc-800">激活时间线</h3>
+          <ol className="mt-2 space-y-2 border-l border-zinc-200 pl-4">
+            {activation.timeline.map((item, i) => (
+              <li key={`${item.stage}-${i}`} className="text-sm text-zinc-700">
+                <span className="font-medium">{item.label}</span>
+                <span className="ml-2 text-xs text-zinc-400">{new Date(item.at).toLocaleString()}</span>
+              </li>
+            ))}
+            {activation.timeline.length === 0 ? <li className="text-sm text-zinc-500">暂无时间线</li> : null}
+          </ol>
+        </section>
+      ) : null}
+
+      {health ? (
+        <section className="rounded-xl border border-zinc-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-medium">用户健康</h2>
+            <span
+              className={
+                health.healthStatus === 'ACTIVE'
+                  ? 'rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700'
+                  : health.healthStatus === 'NEEDS_ATTENTION'
+                    ? 'rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700'
+                    : 'rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600'
+              }
+            >
+              {health.healthStatus} · {health.healthLabel}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 text-sm text-zinc-600 sm:grid-cols-2">
+            <p>首次创建时间 {new Date(health.firstSeenAt).toLocaleString()}</p>
+            <p>最后活跃时间 {new Date(health.lastActiveAt).toLocaleString()}</p>
+            <p>项目数量 {health.projectCount}</p>
+            <p>成功部署次数 {health.deploySuccessCount}</p>
+            <p>当前套餐 {health.plan.name} ({health.plan.code})</p>
+          </div>
+          <h3 className="mt-4 text-sm font-medium text-zinc-800">最近行为</h3>
+          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+            {health.recentEvents.length === 0 ? (
+              <li>暂无 ProductEvent</li>
+            ) : (
+              health.recentEvents.map((event) => (
+                <li key={event.id}>
+                  {event.eventType} · {new Date(event.createdAt).toLocaleString()}
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+      ) : null}
+
+      {lifecycle ? (
+        <section className="rounded-xl border border-zinc-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-medium">生命周期状态</h2>
+            <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white">
+              {lifecycle.statusLabel}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-zinc-600">
+            状态码 {lifecycle.statusCode}
+            {lifecycle.reason ? ` · ${lifecycle.reason}` : ''}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {lifecycle.tags.length === 0 ? (
+              <span className="text-sm text-zinc-500">暂无标签</span>
+            ) : (
+              lifecycle.tags.map((tag) => (
+                <span
+                  key={tag.id}
+                  className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800"
+                >
+                  {tag.tag}
+                  <span className="ml-1 text-amber-600/70">{tag.source}</span>
+                </span>
+              ))
+            )}
+          </div>
+          {lifecycle.lastFailedDeploy ? (
+            <p className="mt-3 text-sm text-red-700">
+              最近失败：{lifecycle.lastFailedDeploy.errorMessage || lifecycle.lastFailedDeploy.failureCode || '未知'}
+              {' · '}
+              {new Date(lifecycle.lastFailedDeploy.createdAt).toLocaleString()}
+            </p>
+          ) : null}
+
+          <h3 className="mt-5 text-sm font-medium text-zinc-800">活动时间线</h3>
+          <ol className="mt-3 space-y-0">
+            {lifecycle.timeline.length === 0 ? (
+              <li className="text-sm text-zinc-500">暂无事件</li>
+            ) : (
+              lifecycle.timeline.map((item, index) => (
+                <li key={item.id} className="relative flex gap-3 pb-4 last:pb-0">
+                  <div className="flex w-4 flex-col items-center">
+                    <span className="mt-1 h-2.5 w-2.5 rounded-full bg-zinc-900" />
+                    {index < lifecycle.timeline.length - 1 ? (
+                      <span className="mt-1 w-px flex-1 bg-zinc-200" />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="font-medium text-zinc-900">{item.label}</p>
+                    <p className="text-xs text-zinc-500">
+                      {item.eventType} · {new Date(item.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                </li>
+              ))
+            )}
+          </ol>
+
+          <h3 className="mt-5 text-sm font-medium text-zinc-800">触发规则</h3>
+          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+            {lifecycle.triggeredRules.length === 0 ? (
+              <li>暂无触发记录</li>
+            ) : (
+              lifecycle.triggeredRules.map((row) => (
+                <li key={row.id}>
+                  {row.ruleName || row.ruleId || '规则'} · {row.actionType} · {row.status} ·{' '}
+                  {new Date(row.createdAt).toLocaleString()}
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+      ) : null}
+
+      {aiInsight ? (
+        <section className="rounded-xl border border-zinc-200 bg-white p-5">
+          <h2 className="text-lg font-medium">AI 用户分析</h2>
+          {aiInsight.note ? <p className="mt-1 text-xs text-zinc-500">{aiInsight.note}</p> : null}
+          <div className="mt-3 grid gap-2 text-sm text-zinc-700 sm:grid-cols-2">
+            <p>
+              用户画像：<span className="font-medium">{aiInsight.profile.type}</span>
+            </p>
+            <p>
+              当前阶段：<span className="font-medium">{aiInsight.currentStage}</span>
+            </p>
+            <p>
+              套餐：{aiInsight.profile.plan} ({aiInsight.profile.planCode})
+            </p>
+            <p>
+              项目 {aiInsight.profile.projectCount} · 成功部署 {aiInsight.profile.deploySuccessCount} ·
+              失败 {aiInsight.profile.deployFailedCount}
+            </p>
+          </div>
+          <h3 className="mt-4 text-sm font-medium text-zinc-800">风险</h3>
+          <ul className="mt-2 space-y-1 text-sm text-zinc-600">
+            {aiInsight.risks.length === 0 ? (
+              <li>暂无明显风险</li>
+            ) : (
+              aiInsight.risks.map((risk) => (
+                <li key={risk.code}>
+                  {risk.title}
+                  {risk.detail ? ` · ${risk.detail}` : ''}
+                </li>
+              ))
+            )}
+          </ul>
+          <h3 className="mt-4 text-sm font-medium text-zinc-800">建议</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-zinc-600">
+            {aiInsight.suggestions.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-zinc-200 bg-white p-5">
         <h2 className="text-lg font-medium">Workspace</h2>

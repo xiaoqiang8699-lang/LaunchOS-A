@@ -20,6 +20,9 @@ type Row = {
   subscriptionStatus: string;
   accountStatus: string;
   accountStatusLabel: string;
+  tags?: string[];
+  needsOnboarding?: boolean;
+  lifecycleHint?: string | null;
 };
 
 type Page = { page: number; pageSize: number; total: number; items: Row[] };
@@ -101,7 +104,7 @@ export default function AdminUsersPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-zinc-200 text-zinc-500">
                 <tr>
-                  {['用户', '邮箱', '平台注册角色', '注册时间', '最近登录', 'Workspace', '应用数量', '套餐', '账号状态', '操作'].map((head) => (
+                  {['用户', '邮箱', '平台注册角色', '注册时间', '最近登录', 'Workspace', '应用数量', '套餐', '生命周期', '账号状态', '操作'].map((head) => (
                     <th key={head} className="px-3 py-2 font-medium">{head}</th>
                   ))}
                 </tr>
@@ -117,6 +120,15 @@ export default function AdminUsersPage() {
                     <td className="px-3 py-2">{row.workspaces.map((workspace) => workspace.name).join('、') || '—'}</td>
                     <td className="px-3 py-2">{row.applications}</td>
                     <td className="px-3 py-2">{row.plan}</td>
+                    <td className="px-3 py-2">
+                      {row.lifecycleHint ? (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                          {row.lifecycleHint}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="px-3 py-2">{row.accountStatusLabel}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-2">

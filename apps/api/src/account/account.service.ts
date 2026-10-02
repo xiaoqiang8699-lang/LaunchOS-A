@@ -7,6 +7,7 @@ import { PricingService } from '../billing/pricing.service';
 import { CommercialService } from '../billing/commercial.service';
 import { PaymentService } from '../billing/payment.service';
 import { EntitlementGovernanceService } from '../billing/entitlement-governance.service';
+import { ProductAnalyticsService } from '../analytics/product-analytics.service';
 import { AuthService } from '../auth/auth.service';
 import { PrismaService } from '../database/prisma.service';
 import { WorkspaceAccessService } from '../workspaces/workspace-access.service';
@@ -35,6 +36,7 @@ export class AccountService {
     private readonly commercial: CommercialService,
     private readonly payments: PaymentService,
     private readonly entitlementGov: EntitlementGovernanceService,
+    private readonly analytics: ProductAnalyticsService,
   ) {}
 
   async profile(userId: string) {
@@ -283,11 +285,25 @@ export class AccountService {
   }
 
   async planComparison(userId: string) {
-    return this.pricing.comparison(userId);
+    const result = await this.pricing.comparison(userId);
+    void this.analytics.track({ event: 'PLAN_VIEWED', userId }).catch(() => undefined);
+    return result;
   }
 
   async featureHint(userId: string, feature: string) {
     return this.pricing.featureHint(userId, feature);
+  }
+
+  async changePlan(userId: string, planCode: string) {
+    const result = await this.subscriptions.changePlanForUser(userId, planCode);
+    void this.analytics
+      .track({
+        event: 'PLAN_CHANGED',
+        userId,
+        metadata: { plan: planCode, mode: result.mode },
+      })
+      .catch(() => undefined);
+    return result;
   }
 
   async scheduleCancel(userId: string) {

@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient, SubscriptionStatus } from '@launchos/database';
 import { decideActivate } from './subscription-operations';
+import { calculatePeriodEnd } from './billing-period';
 import { buildInvoiceSnapshot } from './commercial-readiness';
 import { fulfillmentSourceForPayment, providerAmountMatches, subscriptionChargeCents, buildMerchantOrderNo } from './alipay-readiness';
 import {
@@ -101,9 +102,20 @@ export async function createAlipayCheckout(prisma: PrismaClient, input: { orderI
   if (!order || !order.plan) return { ok: false as const, code: 'PAYMENT_NOT_FOUND' };
   if (order.payments.some((payment) => payment.status === 'SUCCEEDED')) return { ok: false as const, code: 'ORDER_ALREADY_PAID' };
   if (order.expiresAt && order.expiresAt.getTime() <= Date.now() && order.status !== 'DRAFT') return { ok: false as const, code: 'ORDER_EXPIRED' };
-  if (order.status !== 'DRAFT' && order.status !== 'PAYMENT_FAILED') return { ok: false as const, code: 'LAST_PAYMENT_STATE_INVALID' };
+  // Reuse active Alipay pending BEFORE rejecting PENDING_PAYMENT — regenerate page.pay with same out_trade_no.
   const active = order.payments.find((payment) => (payment.status === 'PENDING' || payment.status === 'PROCESSING') && payment.provider === 'ALIPAY');
-  if (active?.merchantOrderNo) return { ok: true as const, payment: active, chargedAmount: active.amountCents != null ? active.amountCents / 100 : active.amount, amountCents: active.amountCents ?? active.amount * 100, merchantOrderNo: active.merchantOrderNo, ignoredClientAmount: false };
+  if (active?.merchantOrderNo) {
+    return {
+      ok: true as const,
+      payment: active,
+      chargedAmount: active.amountCents != null ? active.amountCents / 100 : active.amount,
+      amountCents: active.amountCents ?? active.amount * 100,
+      merchantOrderNo: active.merchantOrderNo,
+      ignoredClientAmount: false,
+      reused: true as const,
+    };
+  }
+  if (order.status !== 'DRAFT' && order.status !== 'PAYMENT_FAILED') return { ok: false as const, code: 'LAST_PAYMENT_STATE_INVALID' };
   const productionTest = input.isProductionTest === true;
   if (productionTest && (order.plan.code !== 'PAYMENT_TEST' || order.plan.status !== 'INTERNAL_TEST')) return { ok: false as const, code: 'ALIPAY_PRODUCTION_TEST_PLAN' };
   if (!productionTest && order.plan.code === 'PAYMENT_TEST') return { ok: false as const, code: 'ALIPAY_PRODUCTION_TEST_DISABLED' };
@@ -149,7 +161,7 @@ export async function createAlipayCheckout(prisma: PrismaClient, input: { orderI
     },
   });
   await audit(prisma, order.workspaceId, input.actorId, 'ALIPAY_CHECKOUT_CREATED', { orderId: order.id, paymentId: payment.id, provider: 'ALIPAY', amount: productionTest ? charge.cents : charge.yuan, currency: payment.currency, productionTest });
-  return { ok: true as const, payment, chargedAmount: productionTest ? charge.cents / 100 : charge.yuan, amountCents: productionTest ? charge.cents : charge.yuan * 100, merchantOrderNo, ignoredClientAmount: charge.ignoredClientAmount };
+  return { ok: true as const, payment, chargedAmount: productionTest ? charge.cents / 100 : charge.yuan, amountCents: productionTest ? charge.cents : charge.yuan * 100, merchantOrderNo, ignoredClientAmount: charge.ignoredClientAmount, reused: false as const };
 }
 
 export async function applyWebhookEvent(prisma: PrismaClient, input: {
@@ -369,40 +381,76 @@ export async function fulfillCommercialOrder(prisma: PrismaClient, orderId: stri
       const key = `order-fulfill:${order.id}`;
       const seen = await tx.subscriptionEvent.findUnique({ where: { idempotencyKey: key } });
       const source = fulfillmentSourceForPayment(payment);
+      // PAYMENT_TEST / production small-amount: validate payment loop only — never change real plan entitlement.
+      const paymentTestOnly = payment.isProductionTest === true || source.source === 'ALIPAY_PRODUCTION_TEST';
       if (!seen) {
-        const decision = decideActivate({ actorIsAdmin: true, now: new Date(), timeZone: subscription.workspace.timezone || 'Asia/Shanghai' });
-        if (!decision.ok) throw new Error('FULFILLMENT_FAILED');
-        await tx.subscription.update({
-          where: { id: subscription.id },
-          data: {
-            planId: order.planId,
-            planVersionId: order.planVersionId,
-            status: SubscriptionStatus.ACTIVE,
-            source: source.source,
-            activationSource: source.activationSource,
-            paymentStatus: source.paymentStatus,
-            currentPeriodStart: new Date(decision.value.currentPeriodStart),
-            currentPeriodEnd: new Date(decision.value.currentPeriodEnd),
-            manualAutoExtension: false,
-            cancelAtPeriodEnd: false,
-            pendingPlanId: null,
-            planChangeEffectiveAt: null,
-          },
-        });
-        await tx.subscriptionEvent.create({
-          data: {
-            workspaceId: order.workspaceId,
-            subscriptionId: subscription.id,
-            eventType: 'SUBSCRIPTION_ACTIVATED',
-            fromPlanId: subscription.planId,
-            toPlanId: order.planId,
-            effectiveAt: new Date(),
-            actorUserId: actorId,
-            source: source.source,
-            metadataSafe: { orderId: order.id, paymentId: payment.id },
-            idempotencyKey: key,
-          },
-        });
+        if (paymentTestOnly) {
+          await tx.subscriptionEvent.create({
+            data: {
+              workspaceId: order.workspaceId,
+              subscriptionId: subscription.id,
+              eventType: 'PAYMENT_TEST_VALIDATED',
+              fromPlanId: subscription.planId,
+              toPlanId: subscription.planId,
+              effectiveAt: new Date(),
+              actorUserId: actorId,
+              source: source.source,
+              metadataSafe: {
+                orderId: order.id,
+                paymentId: payment.id,
+                productionTest: true,
+                planUnchanged: true,
+              },
+              idempotencyKey: key,
+            },
+          });
+        } else {
+          const decision = decideActivate({ actorIsAdmin: true, now: new Date(), timeZone: subscription.workspace.timezone || 'Asia/Shanghai' });
+          if (!decision.ok) throw new Error('FULFILLMENT_FAILED');
+          const cycleRaw = String(order.billingInterval || 'monthly').toLowerCase();
+          const billingCycle = cycleRaw === 'yearly' || cycleRaw === 'year' ? 'YEARLY' : 'MONTHLY';
+          const periodStart = new Date(decision.value.currentPeriodStart);
+          const periodEnd =
+            billingCycle === 'YEARLY'
+              ? calculatePeriodEnd(periodStart, 'YEARLY', subscription.workspace.timezone || 'Asia/Shanghai')
+              : new Date(decision.value.currentPeriodEnd);
+          await tx.subscription.update({
+            where: { id: subscription.id },
+            data: {
+              planId: order.planId,
+              planVersionId: order.planVersionId,
+              status: SubscriptionStatus.ACTIVE,
+              source: source.source === 'PAYMENT_PROVIDER' ? 'PAYMENT' : source.source,
+              activationSource: source.activationSource,
+              paymentStatus: source.paymentStatus,
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: periodEnd,
+              manualAutoExtension: false,
+              cancelAtPeriodEnd: false,
+              pendingPlanId: null,
+              planChangeEffectiveAt: null,
+              latestPaymentId: payment.id,
+              activatedAt: new Date(),
+              billingCycle,
+              gracePeriodEnd: null,
+              expiredAt: null,
+            },
+          });
+          await tx.subscriptionEvent.create({
+            data: {
+              workspaceId: order.workspaceId,
+              subscriptionId: subscription.id,
+              eventType: 'SUBSCRIPTION_ACTIVATED',
+              fromPlanId: subscription.planId,
+              toPlanId: order.planId,
+              effectiveAt: new Date(),
+              actorUserId: actorId,
+              source: source.source === 'PAYMENT_PROVIDER' ? 'PAYMENT' : source.source,
+              metadataSafe: { orderId: order.id, paymentId: payment.id, billingCycle },
+              idempotencyKey: key,
+            },
+          });
+        }
       }
       const already = await tx.invoice.findFirst({ where: { commercialOrderId: order.id } });
       if (already) {
@@ -566,6 +614,7 @@ export async function reconcilePayments(
   query?: (payment: { id: string; provider: string | null; merchantOrderNo: string | null; environment: string | null; status: string; createdAt: Date; orderId: string }) => Promise<
     | null
     | { state: 'UNKNOWN_PENDING' }
+    | { state: 'TRADE_NOT_EXIST' }
     | { state: 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'PENDING'; amountCents: number; currency: string; providerTradeNo: string | null; appId: string | null; merchantOrderNo: string | null; eventId: string }
   >,
   minAgeMs = 120_000,
@@ -586,7 +635,24 @@ export async function reconcilePayments(
       const result = await query(payment);
       queried += 1;
       if (!result || result.state === 'UNKNOWN_PENDING' || result.state === 'PENDING') {
-        await prisma.payment.update({ where: { id: payment.id }, data: { status: payment.status === 'SUCCEEDED' ? payment.status : 'PROCESSING', lastQueryState: 'UNKNOWN_PENDING', lastQueriedAt: now } });
+        await prisma.payment.update({ where: { id: payment.id }, data: { status: payment.status === 'SUCCEEDED' ? payment.status : 'PROCESSING', lastQueryState: result?.state === 'PENDING' ? 'PENDING' : 'UNKNOWN_PENDING', lastQueriedAt: now } });
+        continue;
+      }
+      if (result.state === 'TRADE_NOT_EXIST') {
+        await prisma.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: 'FAILED',
+            failureCode: 'PROVIDER_TRADE_NOT_CREATED_INVALID_SIGNATURE',
+            failureMessageSafe: '支付宝侧未创建交易',
+            lastQueryState: 'TRADE_NOT_EXIST',
+            lastQueriedAt: now,
+          },
+        });
+        await prisma.commercialOrder.updateMany({
+          where: { id: payment.orderId, status: { in: ['DRAFT', 'PENDING_PAYMENT'] } },
+          data: { status: 'PAYMENT_FAILED' },
+        });
         continue;
       }
       const eventName = result.state === 'SUCCEEDED' ? 'PAYMENT_SUCCEEDED' : result.state === 'CANCELED' ? 'PAYMENT_CANCELED' : 'PAYMENT_FAILED';

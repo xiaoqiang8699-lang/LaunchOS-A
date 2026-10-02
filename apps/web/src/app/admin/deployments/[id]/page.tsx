@@ -57,11 +57,28 @@ type Detail = {
 export default function AdminDeploymentDetailPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<Detail | null>(null);
+  const [copilot, setCopilot] = useState<{
+    category: string;
+    summary: string;
+    rootCause: string;
+    impact: string;
+    fixActions: Array<{ step: number; title: string }>;
+    confidence: number;
+    similarCount?: number;
+    source: string;
+  } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     void api<Detail>(`/admin/deployments/${params.id}`)
-      .then(setData)
+      .then((detail) => {
+        setData(detail);
+        if (detail.status === 'FAILED') {
+          void api<NonNullable<typeof copilot>>(`/admin/deployments/${params.id}/copilot`)
+            .then(setCopilot)
+            .catch(() => setCopilot(null));
+        }
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : '加载失败'));
   }, [params.id]);
 
@@ -89,6 +106,39 @@ export default function AdminDeploymentDetailPage() {
 
       {data.errorMessage ? (
         <InlineAlert tone="error" title="用户可见错误" description={data.errorMessage} />
+      ) : null}
+
+      {copilot ? (
+        <Section title="AI诊断">
+          <Card className="space-y-2 p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium text-zinc-900">{copilot.summary}</p>
+              <StatusBadge status={copilot.category} label={copilot.category} tone="warning" />
+            </div>
+            <p>根因：{copilot.rootCause}</p>
+            <p>影响：{copilot.impact}</p>
+            <p className="text-xs text-zinc-500">
+              置信度 {(copilot.confidence * 100).toFixed(0)}% · {copilot.source}
+              {copilot.similarCount != null ? ` · 历史类似 ${copilot.similarCount}` : ''}
+            </p>
+            <ol className="list-decimal space-y-1 pl-5">
+              {copilot.fixActions.map((action) => (
+                <li key={action.step}>{action.title}</li>
+              ))}
+            </ol>
+            <button
+              type="button"
+              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm"
+              onClick={() =>
+                void api<NonNullable<typeof copilot>>(`/admin/deployments/${params.id}/copilot/analyze`, {
+                  method: 'POST',
+                }).then(setCopilot)
+              }
+            >
+              重新分析
+            </button>
+          </Card>
+        </Section>
       ) : null}
 
       <Section title="Stage timeline">

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rm, copyFile, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { unzipSync, strFromU8 } from 'fflate';
@@ -19,15 +19,22 @@ export type ExtractedZipProject = {
 
 export async function extractOnboardingZip(input: {
   projectId: string;
-  zipBuffer: Buffer;
+  zipBuffer?: Buffer;
+  zipPath?: string;
   originalName?: string;
   workspaceDir: string;
 }): Promise<ExtractedZipProject> {
-  assertZipSizeWithinLimit(input.zipBuffer.byteLength);
+  const zipBuffer =
+    input.zipBuffer ??
+    (input.zipPath ? await readFile(input.zipPath) : null);
+  if (!zipBuffer?.byteLength) {
+    throw new Error('ZIP_EMPTY');
+  }
+  assertZipSizeWithinLimit(zipBuffer.byteLength);
 
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(new Uint8Array(input.zipBuffer));
+    entries = unzipSync(new Uint8Array(zipBuffer));
   } catch {
     throw new Error('ZIP_INVALID');
   }
@@ -71,7 +78,6 @@ export async function extractOnboardingZip(input: {
     throw new Error('ZIP_EMPTY_CONTENT');
   }
 
-  // If ZIP contained a single top-level directory, flatten is optional; keep as-is.
   const rootDirName =
     writtenRoots.size === 1 ? [...writtenRoots][0] || null : null;
 
@@ -96,7 +102,51 @@ export async function persistZipUpload(uploadId: string, zipBuffer: Buffer): Pro
   const path = onboardingZipTempPath(uploadId);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, zipBuffer);
+  await markSourceArchiveCleanupEligible(path, {
+    reason: 'TEMPORARY_SOURCE_ARCHIVE',
+    hours: 24,
+  });
   return path;
+}
+
+export async function persistZipUploadFromPath(
+  uploadId: string,
+  sourcePath: string,
+): Promise<string> {
+  const path = onboardingZipTempPath(uploadId);
+  await mkdir(dirname(path), { recursive: true });
+  await copyFile(sourcePath, path);
+  await markSourceArchiveCleanupEligible(path, {
+    reason: 'TEMPORARY_SOURCE_ARCHIVE',
+    hours: 24,
+  });
+  return path;
+}
+
+/** Mark temp ZIP for deferred cleanup (no immediate delete of user data). */
+export async function markSourceArchiveCleanupEligible(
+  archivePath: string,
+  opts?: { reason?: string; hours?: number },
+): Promise<void> {
+  const hours = opts?.hours ?? 24;
+  const metaPath = `${archivePath}.cleanup.json`;
+  const eligibleAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  await writeFile(
+    metaPath,
+    JSON.stringify({
+      eligible: true,
+      reason: opts?.reason || 'TEMPORARY_SOURCE_ARCHIVE',
+      eligibleAt,
+      createdAt: new Date().toISOString(),
+    }),
+    'utf8',
+  );
+}
+
+export async function cleanupTempUpload(path?: string | null): Promise<void> {
+  if (!path) return;
+  await unlink(path).catch(() => undefined);
+  await unlink(`${path}.cleanup.json`).catch(() => undefined);
 }
 
 export async function readPersistedZip(path: string): Promise<Buffer> {

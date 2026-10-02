@@ -88,6 +88,11 @@ export class AccountController {
     return this.account.requestUpgrade(user.id, body.planCode ?? 'pro');
   }
 
+  @Post('subscription/change-plan')
+  changePlan(@CurrentUser() user: AuthUser, @Body() body: { plan?: string; planCode?: string }) {
+    return this.account.changePlan(user.id, body.plan ?? body.planCode ?? '');
+  }
+
   @Post('subscription/cancel')
   cancelSubscription(@CurrentUser() user: AuthUser) {
     return this.account.scheduleCancel(user.id);

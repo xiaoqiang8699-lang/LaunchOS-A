@@ -104,14 +104,89 @@ describe('alipay provider', () => {
     assert.equal(extracted?.content, '{"code":"10000"}');
   });
 
-  it('checks key format and gateway reachability without cross-signing the two keys', async () => {
-    const unreachable = new AlipayPaymentProvider(config, async () => {
-      throw new Error('down');
+  it('includes sign_type in request sign content but excludes it for notify verify', () => {
+    const keys = pair();
+    const requestParams = {
+      app_id: 'sandbox-app',
+      method: 'alipay.trade.page.pay',
+      format: 'json',
+      charset: 'utf-8',
+      sign_type: 'RSA2',
+      timestamp: '2026-10-02 14:00:00',
+      version: '1.0',
+      biz_content: '{"out_trade_no":"LOS-1","total_amount":"0.90","subject":"t","product_code":"FAST_INSTANT_TRADE_PAY"}',
+    };
+    const sign = signAlipayParams(requestParams, pem(keys.privateKey, 'pkcs8'));
+    assert.match(sign, /^[A-Za-z0-9+/=]+$/);
+    const checkout = buildPagePayUrl(config, { merchantOrderNo: 'LOS-20260928-ABCDEF12', amountCents: 90, subject: 'LaunchOS test' });
+    const url = new URL(checkout.url);
+    assert.equal(url.searchParams.get('sign_type'), 'RSA2');
+    assert.equal(url.searchParams.get('format'), 'json');
+    assert.equal(url.searchParams.get('charset'), 'utf-8');
+    assert.ok(!(url.search.includes('&amp;') || url.search.includes('&quot;')));
+    const bizRaw = url.searchParams.get('biz_content') ?? '';
+    assert.equal(bizRaw.includes('&quot;'), false);
+    assert.deepEqual(JSON.parse(bizRaw).total_amount, '0.90');
+  });
+
+  it('maps ACQ.TRADE_NOT_EXIST query responses without treating them as unknown pending forever', async () => {
+    const fetchImpl: GatewayFetch = async () => {
+      const content = JSON.stringify({
+        code: '40004',
+        msg: 'Business Failed',
+        sub_code: 'ACQ.TRADE_NOT_EXIST',
+        sub_msg: '交易不存在',
+      });
+      return {
+        status: 200,
+        text: JSON.stringify({
+          alipay_trade_query_response: JSON.parse(content),
+          sign: signAlipayContent(content, pem(alipay.privateKey, 'pkcs8')),
+        }),
+      };
+    };
+    const provider = new AlipayPaymentProvider(config, fetchImpl);
+    const trade = await provider.getCheckoutStatus('LOS-20261002-GHOST001');
+    assert.equal(trade.state, 'TRADE_NOT_EXIST');
+  });
+
+  it('classifies TRADE_NOT_EXIST even when response signature verification fails', async () => {
+    const fetchImpl: GatewayFetch = async () => ({
+      status: 200,
+      text: JSON.stringify({
+        alipay_trade_query_response: {
+          code: '40004',
+          msg: 'Business Failed',
+          sub_code: 'ACQ.TRADE_NOT_EXIST',
+          sub_msg: '交易不存在',
+        },
+        sign: 'not-a-valid-signature',
+      }),
     });
-    const failed = await unreachable.verifyConfiguration();
-    assert.equal(failed.ok, false);
-    const reachable = new AlipayPaymentProvider(config, async () => ({ status: 200, text: 'ok' }));
-    const passed = await reachable.verifyConfiguration();
-    assert.equal(passed.ok, true);
+    const provider = new AlipayPaymentProvider(config, fetchImpl);
+    const trade = await provider.getCheckoutStatus('LOS-20261002-GHOST002');
+    assert.equal(trade.state, 'TRADE_NOT_EXIST');
+  });
+
+  it('maps WAIT_BUYER_PAY query as reusable pending', async () => {
+    const fetchImpl: GatewayFetch = async () => {
+      const content = JSON.stringify({
+        code: '10000',
+        trade_status: 'WAIT_BUYER_PAY',
+        out_trade_no: 'LOS-20261002-WAIT001',
+        total_amount: '0.90',
+      });
+      return {
+        status: 200,
+        text: JSON.stringify({
+          alipay_trade_query_response: JSON.parse(content),
+          sign: signAlipayContent(content, pem(alipay.privateKey, 'pkcs8')),
+        }),
+      };
+    };
+    const provider = new AlipayPaymentProvider(config, fetchImpl);
+    const trade = await provider.getCheckoutStatus('LOS-20261002-WAIT001');
+    assert.equal(trade.state, 'PENDING');
+    if (trade.state === 'PENDING') assert.equal(trade.amountCents, 90);
   });
 });

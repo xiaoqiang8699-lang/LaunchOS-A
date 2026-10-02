@@ -26,6 +26,7 @@ describe('plan entitlements M6', () => {
     assert.equal(BETA_PLAN_ENTITLEMENTS.free.maxProjects, 1);
     assert.equal(BETA_PLAN_ENTITLEMENTS.free.maxMonthlyDeployments, 10);
     assert.equal(BETA_PLAN_ENTITLEMENTS.pro.maxProjects, 10);
+    assert.equal(BETA_PLAN_ENTITLEMENTS.pro.maxWorkspaceMembers, 2);
     assert.equal(BETA_PLAN_ENTITLEMENTS.team.maxWorkspaceMembers, 5);
     assert.equal(BETA_PLAN_ENTITLEMENTS.free.customDomainEnabled, false);
     assert.equal(BETA_PLAN_ENTITLEMENTS.free.rollbackEnabled, true);

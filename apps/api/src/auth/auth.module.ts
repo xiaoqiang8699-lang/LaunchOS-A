@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { BillingModule } from '../billing/billing.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { requireJwtSecret } from '../env';
@@ -9,6 +10,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 @Module({
   imports: [
     BillingModule,
+    AnalyticsModule,
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: requireJwtSecret(),

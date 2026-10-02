@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, BadRequestException, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
@@ -10,6 +10,24 @@ import { SubscriptionService } from '../billing/subscription.service';
 import { PricingService } from '../billing/pricing.service';
 import { CommercialService } from '../billing/commercial.service';
 import { EntitlementGovernanceService } from '../billing/entitlement-governance.service';
+import { GrowthAnalyticsService } from '../analytics/growth-analytics.service';
+import { LifecycleAutomationService } from '../lifecycle/lifecycle-automation.service';
+import {
+  AIGrowthService,
+  AIUserInsightService,
+  DeploymentInsightService,
+  UpgradeOpportunityService,
+} from '../ai-growth/ai-growth.services';
+import { AIDeploymentCopilotService } from '../ai-growth/ai-deployment-copilot.service';
+import { AIDeploymentPreflightService } from '../ai-growth/ai-deployment-preflight.service';
+import {
+  DeploymentKnowledgeService,
+  KnowledgeExtractionService,
+} from '../ai-growth/deployment-knowledge.service';
+import { AIDeploymentSuccessOptimizerService } from '../ai-growth/ai-deployment-success.service';
+import { AIProductRecommendationService } from '../ai-growth/ai-product-recommendation.service';
+import { AIOnboardingOptimizerService } from '../ai-growth/ai-onboarding-optimizer.service';
+import { ActivationBackfillService } from '../ai-growth/activation-backfill.service';
 import { DeleteAdminUserDto } from './dto/delete-admin-user.dto';
 import { UpdateAdminUserDto } from './dto/update-admin-user.dto';
 
@@ -25,6 +43,20 @@ export class AdminController {
     private readonly pricing: PricingService,
     private readonly commercial: CommercialService,
     private readonly entitlements: EntitlementGovernanceService,
+    private readonly growth: GrowthAnalyticsService,
+    private readonly lifecycle: LifecycleAutomationService,
+    private readonly aiGrowth: AIGrowthService,
+    private readonly aiUserInsight: AIUserInsightService,
+    private readonly deploymentInsight: DeploymentInsightService,
+    private readonly upgradeOpportunity: UpgradeOpportunityService,
+    private readonly deploymentCopilot: AIDeploymentCopilotService,
+    private readonly deploymentPreflight: AIDeploymentPreflightService,
+    private readonly deploymentKnowledge: DeploymentKnowledgeService,
+    private readonly knowledgeExtraction: KnowledgeExtractionService,
+    private readonly successOptimizer: AIDeploymentSuccessOptimizerService,
+    private readonly productRecommendations: AIProductRecommendationService,
+    private readonly onboardingOptimizer: AIOnboardingOptimizerService,
+    private readonly activationBackfill: ActivationBackfillService,
   ) {}
 
   @Get('overview')
@@ -263,6 +295,21 @@ export class AdminController {
     return this.subscriptionOps.detail(user.id, id);
   }
 
+  @Get('subscriptions/:id/timeline')
+  subscriptionTimeline(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.subscriptionOps.timeline(user.id, id);
+  }
+
+  @Post('subscriptions/:id/reconcile')
+  subscriptionReconcile(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.subscriptionOps.reconcile(user.id, id);
+  }
+
+  @Post('subscriptions/reconcile')
+  subscriptionsReconcile(@CurrentUser() user: AuthUser) {
+    return this.subscriptionOps.reconcile(user.id);
+  }
+
   @Post('subscriptions/:id/trial')
   subscriptionTrial(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: { planCode?: string; days?: number; reason?: string }) {
     return this.subscriptionOps.startTrial({ actorId: user.id, subscriptionId: id, planCode: body.planCode ?? 'pro', days: Number(body.days ?? 14), reason: body.reason, adminRegrant: true });
@@ -357,6 +404,18 @@ export class AdminController {
     return this.admin.listDeployments(query);
   }
 
+  @Get('deployments/:id/copilot')
+  async adminDeploymentCopilot(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentCopilot.getCopilotAsAdmin(id);
+  }
+
+  @Post('deployments/:id/copilot/analyze')
+  async adminDeploymentCopilotAnalyze(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentCopilot.getCopilotAsAdmin(id, { force: true });
+  }
+
   @Get('deployments/:id')
   async deployment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     await this.admin.requirePlatformAdmin(user.id);
@@ -373,6 +432,321 @@ export class AdminController {
   async platformResources(@CurrentUser() user: AuthUser) {
     await this.admin.requirePlatformAdmin(user.id);
     return this.admin.listPlatformResources();
+  }
+
+  @Get('growth/overview')
+  async growthOverview(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.growth.overview();
+  }
+
+  @Get('growth/funnel')
+  async growthFunnel(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.growth.funnel();
+  }
+
+  @Get('growth/usage')
+  async growthUsage(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.growth.usage();
+  }
+
+  @Get('growth/events')
+  async growthEvents(@CurrentUser() user: AuthUser, @Query() query: Record<string, string>) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.growth.events(query);
+  }
+
+  @Get('growth/commercial')
+  async growthCommercial(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.growth.commercial();
+  }
+
+  @Get('users/:id/health')
+  async userHealth(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    const health = await this.growth.userHealth(id);
+    if (!health) {
+      throw new NotFoundException('User not found');
+    }
+    return health;
+  }
+
+  @Get('users/:id/lifecycle')
+  async userLifecycle(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    const lifecycle = await this.lifecycle.userLifecycle(id);
+    if (!lifecycle) {
+      throw new NotFoundException('User not found');
+    }
+    return lifecycle;
+  }
+
+  @Get('automation')
+  async automationOverview(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.lifecycle.overview();
+  }
+
+  @Get('automation/rules')
+  async automationRules(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.lifecycle.listRules();
+  }
+
+  @Post('automation/rules')
+  async createAutomationRule(
+    @CurrentUser() user: AuthUser,
+    @Body()
+    body: {
+      name?: string;
+      description?: string;
+      triggerEvent?: string;
+      conditionJson?: Record<string, unknown>;
+      actionType?: 'ADD_TAG' | 'CREATE_ALERT' | 'SHOW_IN_ADMIN';
+      actionConfigJson?: Record<string, unknown>;
+      status?: 'ACTIVE' | 'DISABLED';
+    },
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    if (!body?.name?.trim() || !body?.triggerEvent?.trim() || !body?.actionType) {
+      throw new BadRequestException('INVALID_RULE');
+    }
+    return this.lifecycle.createRule({
+      name: body.name.trim(),
+      description: body.description,
+      triggerEvent: body.triggerEvent.trim(),
+      conditionJson: body.conditionJson,
+      actionType: body.actionType,
+      actionConfigJson: body.actionConfigJson,
+      status: body.status,
+    });
+  }
+
+  @Patch('automation/rules/:id')
+  async updateAutomationRule(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body()
+    body: Partial<{
+      name: string;
+      description: string | null;
+      triggerEvent: string;
+      conditionJson: Record<string, unknown>;
+      actionType: 'ADD_TAG' | 'CREATE_ALERT' | 'SHOW_IN_ADMIN';
+      actionConfigJson: Record<string, unknown>;
+      status: 'ACTIVE' | 'DISABLED';
+    }>,
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.lifecycle.updateRule(id, body || {});
+  }
+
+  @Post('automation/rules/:id/toggle')
+  async toggleAutomationRule(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    const row = await this.lifecycle.toggleRule(id);
+    if (!row) throw new NotFoundException('Rule not found');
+    return row;
+  }
+
+  @Post('automation/scan')
+  async runAutomationScan(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.lifecycle.runDailyScan();
+  }
+
+  @Get('ai-growth/summary')
+  async aiGrowthSummary(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.aiGrowth.generateDailySummary();
+  }
+
+  @Get('ai-growth/issues')
+  async aiGrowthIssues(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentInsight.analyzeDeploymentFailures();
+  }
+
+  @Get('ai-growth/opportunities')
+  async aiGrowthOpportunities(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.upgradeOpportunity.listOpportunities();
+  }
+
+  @Get('deployment-insights')
+  async deploymentInsights(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentCopilot.platformStats(30);
+  }
+
+  @Get('ai-growth/deployment-issues')
+  async aiGrowthDeploymentIssues(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentCopilot.platformStats(30);
+  }
+
+  @Get('preflight-insights')
+  async preflightInsights(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentPreflight.platformStats(30);
+  }
+
+  @Get('ai-growth/preflight')
+  async aiGrowthPreflight(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentPreflight.platformStats(30);
+  }
+
+  @Get('deployment-knowledge')
+  async adminDeploymentKnowledge(
+    @CurrentUser() user: AuthUser,
+    @Query('category') category?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentKnowledge.listAdmin({ category, q, status });
+  }
+
+  @Get('ai-growth/knowledge/analytics')
+  async aiGrowthKnowledgeAnalytics(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentKnowledge.analytics(30);
+  }
+
+  @Post('ai-growth/knowledge/scan')
+  async scanKnowledge(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.knowledgeExtraction.scanRecentSuccesses(30);
+  }
+
+  @Get('ai-growth/knowledge')
+  async aiGrowthKnowledge(
+    @CurrentUser() user: AuthUser,
+    @Query('category') category?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentKnowledge.listAdmin({ category, q, status });
+  }
+
+  @Post('deployment-knowledge/:id/review')
+  async reviewKnowledgeCandidate(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { decision: 'APPROVED' | 'REJECTED' },
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.deploymentKnowledge.reviewCandidate(user.id, id, body.decision);
+  }
+
+  @Get('success-analytics')
+  async successAnalytics(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.successOptimizer.analyzeSuccessRate(30);
+  }
+
+  @Get('success-analytics/frameworks')
+  async successAnalyticsFrameworks(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return {
+      frameworks: await this.successOptimizer.frameworkStats(30),
+      note: '仅分析，不自动修改产品流程。',
+    };
+  }
+
+  @Get('success-analytics/recommendations')
+  async successAnalyticsRecommendations(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return {
+      recommendations: await this.productRecommendations.listRecommendations(),
+      note: '仅建议，不自动落地。',
+    };
+  }
+
+  @Get('ai-growth/success')
+  async aiGrowthSuccess(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.successOptimizer.analyzeSuccessRate(30);
+  }
+
+  @Post('ai-growth/success/refresh')
+  async refreshSuccessAnalytics(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.successOptimizer.refreshSnapshots(30);
+  }
+
+  @Get('onboarding/overview')
+  async onboardingOverview(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.onboardingOptimizer.analyzePlatformOnboarding();
+  }
+
+  @Get('onboarding/funnel')
+  async onboardingFunnel(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    const full = await this.onboardingOptimizer.analyzePlatformOnboarding({ backfill: false });
+    return { funnel: full.funnel, dropoff: full.dropoff, note: full.note };
+  }
+
+  @Get('onboarding/blocked-users')
+  async onboardingBlockedUsers(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('status') status?: string,
+    @Query('stage') stage?: string,
+    @Query('blocker') blocker?: string,
+    @Query('q') q?: string,
+  ) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.onboardingOptimizer.listBlockedUsers({
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 20,
+      status,
+      stage,
+      blocker,
+      q,
+    });
+  }
+
+  @Get('onboarding/recommendations')
+  async onboardingRecommendations(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return {
+      recommendations: await this.onboardingOptimizer.listRecommendations(),
+      note: '仅建议，管理员可人工标记；AI 不会自动标记为已实施。',
+    };
+  }
+
+  @Post('onboarding/backfill')
+  async onboardingBackfill(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.activationBackfill.backfillAll(2000);
+  }
+
+  @Get('ai-growth/onboarding')
+  async aiGrowthOnboarding(@CurrentUser() user: AuthUser) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.onboardingOptimizer.analyzePlatformOnboarding();
+  }
+
+  @Get('users/:id/activation')
+  async userActivation(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    return this.onboardingOptimizer.analyzeUserActivation(id);
+  }
+
+  @Get('users/:id/ai-insight')
+  async userAiInsight(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.admin.requirePlatformAdmin(user.id);
+    const insight = await this.aiUserInsight.analyzeUser(id);
+    if (!insight) throw new NotFoundException('User not found');
+    return insight;
   }
 
   @Get('audit')

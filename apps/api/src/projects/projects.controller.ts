@@ -6,14 +6,16 @@ import {
   Patch,
   Post,
   UploadedFile,
+  UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ZIP_INTAKE_LIMITS } from '@launchos/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
+import { UploadExceptionFilter } from '../common/upload-exception.filter';
+import { createZipMulterOptions } from '../common/zip-upload.multer';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectsService } from './projects.service';
@@ -29,11 +31,8 @@ export class ProjectsController {
   }
 
   @Post('source/zip')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: ZIP_INTAKE_LIMITS.maxZipBytes, files: 1 },
-    }),
-  )
+  @UseFilters(UploadExceptionFilter)
+  @UseInterceptors(FileInterceptor('file', createZipMulterOptions()))
   createFromZip(
     @CurrentUser() user: AuthUser,
     @UploadedFile() file?: Express.Multer.File,

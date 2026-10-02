@@ -97,6 +97,20 @@ export default function AdminSubscriptionDetailPage() {
           <button className="rounded border px-3 py-1.5" type="button" onClick={() => void run('extend', { days: Number(days), reason })}>延长账期</button>
           <button className="rounded border px-3 py-1.5" type="button" onClick={() => void run('schedule-cancel', { reason })}>到期取消</button>
           <button className="rounded border px-3 py-1.5" type="button" onClick={() => void run('resume', { reason })}>恢复</button>
+          <button
+            className="rounded border px-3 py-1.5"
+            type="button"
+            onClick={() => {
+              void api(`/admin/subscriptions/${params.id}/reconcile`, { method: 'POST', body: '{}' })
+                .then((result) => {
+                  setMessage(`已对账 · findings=${Array.isArray((result as { findings?: unknown[] }).findings) ? (result as { findings: unknown[] }).findings.length : 0}`);
+                  load();
+                })
+                .catch((err: unknown) => setError(err instanceof ApiError ? err.message : '对账失败'));
+            }}
+          >
+            生命周期对账
+          </button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input className="h-9 rounded border px-3" placeholder="输入立即取消" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />

@@ -1,39 +1,51 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ControlCenter } from '@/components/control-center';
+import { ConnectServerDialog } from '@/components/resources/connect-server-dialog';
 import { InlineAlert, Skeleton } from '@/components/ui/feedback';
 import { Card, PageHeader, Section } from '@/components/ui/section';
-import { PrimaryLink, SecondaryButton } from '@/components/ui/button';
+import { PrimaryButton, SecondaryButton } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { api } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
 import { PRODUCT_COPY } from '@/lib/product-language';
 import { SERVER_INSTANCE_STATUS_LABELS, SERVER_READY_LABELS } from '@/lib/project-labels';
-import type { AppSummary, ServerInstance } from '@/lib/types';
+import type { AppSummary, ServerConnectionTest, ServerInstance } from '@/lib/types';
 
 export default function ResourcesPage() {
   const router = useRouter();
   const [servers, setServers] = useState<ServerInstance[] | null>(null);
   const [apps, setApps] = useState<AppSummary[] | null>(null);
   const [error, setError] = useState('');
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectHint, setConnectHint] = useState('');
+
+  async function load() {
+    const [nextServers, nextApps] = await Promise.all([
+      api<ServerInstance[]>('/servers'),
+      api<AppSummary[]>('/apps').catch(() => [] as AppSummary[]),
+    ]);
+    setServers(nextServers);
+    setApps(nextApps);
+  }
 
   useEffect(() => {
     if (!getAccessToken()) {
       router.replace('/login');
       return;
     }
-    void Promise.all([
-      api<ServerInstance[]>('/servers'),
-      api<AppSummary[]>('/apps').catch(() => [] as AppSummary[]),
-    ])
-      .then(([nextServers, nextApps]) => {
-        setServers(nextServers);
-        setApps(nextApps);
-      })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : '加载失败'));
+    void load().catch((err: unknown) => setError(err instanceof Error ? err.message : '加载失败'));
+  }, [router]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connect') === '1') {
+      setConnectOpen(true);
+      router.replace('/resources', { scroll: false });
+    }
   }, [router]);
 
   const managedRunning = useMemo(
@@ -46,6 +58,17 @@ export default function ResourcesPage() {
     [apps],
   );
 
+  function handleConnected(_server: ServerInstance, probe: ServerConnectionTest | null) {
+    void load().catch(() => undefined);
+    if (probe?.diagnosis?.canDeploy) {
+      setConnectHint('服务器已连接，可用于上线。');
+    } else if (probe?.connected) {
+      setConnectHint(probe.diagnosis?.summary || '服务器已接入，可能还需要初始化。');
+    } else if (probe) {
+      setConnectHint(probe.diagnosis?.summary || '服务器已保存，但连接检测未通过。');
+    }
+  }
+
   return (
     <ControlCenter>
       <PageHeader
@@ -54,6 +77,7 @@ export default function ResourcesPage() {
       />
 
       {error ? <InlineAlert tone="error" title={error} /> : null}
+      {connectHint ? <InlineAlert className="mb-4" tone="info" title={connectHint} /> : null}
 
       {!servers || !apps ? (
         <div className="grid gap-3">
@@ -88,7 +112,9 @@ export default function ResourcesPage() {
                 如果你已有云服务器，也可以连接到 LaunchOS。连接后可在上线方案中选择运行位置。
               </p>
               <div className="mt-4">
-                <PrimaryLink href="/resources/servers/new">连接服务器</PrimaryLink>
+                <PrimaryButton type="button" onClick={() => setConnectOpen(true)}>
+                  连接服务器
+                </PrimaryButton>
               </div>
 
               {servers.length === 0 ? (
@@ -123,6 +149,12 @@ export default function ResourcesPage() {
           </Section>
         </>
       )}
+
+      <ConnectServerDialog
+        open={connectOpen}
+        onClose={() => setConnectOpen(false)}
+        onConnected={handleConnected}
+      />
     </ControlCenter>
   );
 }

@@ -8,6 +8,14 @@ import { getAccessToken } from '@/lib/auth';
 import { DEMO_GITHUB_URL, detectCodeVersion } from '@/lib/detect-git-version';
 import { PRODUCT_COPY } from '@/lib/product-language';
 import { APPLICATION_PURPOSE_HINTS, APPLICATION_PURPOSE_LABELS } from '@/lib/project-labels';
+import { ConfirmDialog } from '@/components/ui/toast';
+import { checkProjectCreateQuota } from '@/components/create-app/create-app-entry-button';
+import {
+  ZIP_SOURCE_MAX_BYTES,
+  formatZipSizeMb,
+  mapZipUploadError,
+  zipTooLargeMessage,
+} from '@/lib/zip-upload';
 import type {
   ApplicationPurpose,
   GitHubConnectionStatus,
@@ -61,6 +69,9 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
   const [detecting, setDetecting] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [connectingGithub, setConnectingGithub] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [limitMessage, setLimitMessage] = useState('');
+  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'analyzing'>('idle');
 
   const returnTo = fromOnboarding
     ? '/projects/new?from=onboarding&github=connected'
@@ -71,6 +82,16 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
       router.replace('/login');
       return;
     }
+    // Gate: if plan project quota is already exhausted, prompt before filling the form.
+    void checkProjectCreateQuota()
+      .then((gate) => {
+        if (gate.atLimit) {
+          setLimitMessage(gate.message);
+          setLimitOpen(true);
+        }
+      })
+      .catch(() => undefined);
+
     if (fromOnboarding) {
       void api('/onboarding/source/viewed', { method: 'POST' }).catch(() => undefined);
     }
@@ -198,6 +219,10 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
       setError('请选择 ZIP 文件');
       return;
     }
+    if (codeMode === 'zip' && zipFile && zipFile.size > ZIP_SOURCE_MAX_BYTES) {
+      setError(zipTooLargeMessage(zipFile));
+      return;
+    }
     if (codeMode === 'zip' && zipFile && !name.trim()) {
       setName(zipFile.name.replace(/\.zip$/i, '') || 'uploaded-app');
     }
@@ -224,12 +249,17 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
     }
 
     setPending(true);
+    setUploadPhase('idle');
     try {
       if (codeMode === 'zip') {
         if (!zipFile) throw new Error('请选择 ZIP 文件');
+        if (zipFile.size > ZIP_SOURCE_MAX_BYTES) {
+          throw new Error(zipTooLargeMessage(zipFile));
+        }
         const token = window.localStorage.getItem('accessToken');
         const form = new FormData();
         form.append('file', zipFile);
+        setUploadPhase('uploading');
         const response = await fetch(`${API_BASE}/api/v1/projects/source/zip`, {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -237,15 +267,18 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
         });
         if (!response.ok) {
           const payload = (await response.json().catch(() => null)) as
-            | { message?: string; code?: string }
+            | { message?: string; code?: string; maxBytes?: number }
             | null;
-          throw new ApiError(
-            response.status,
-            typeof payload?.message === 'string' ? payload.message : '上传失败',
-            payload?.code,
-            payload,
-          );
+          const friendly = mapZipUploadError({
+            status: response.status,
+            message: typeof payload?.message === 'string' ? payload.message : undefined,
+            code: payload?.code,
+            maxBytes: payload?.maxBytes,
+            fileSize: zipFile.size,
+          });
+          throw new ApiError(response.status, friendly, payload?.code, payload);
         }
+        setUploadPhase('analyzing');
         const project = (await response.json()) as ProjectSummary;
         if (purpose) {
           await api(`/projects/${project.id}`, {
@@ -291,18 +324,49 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
       afterCreate(project.id);
     } catch (err) {
       const message =
-        err instanceof ApiError && err.code === 'PROJECT_LIMIT_REACHED'
-          ? err.message
+        err instanceof ApiError
+          ? mapZipUploadError({
+              status: err.status,
+              message: err.message,
+              code: err.code,
+              maxBytes:
+                err.body && typeof err.body === 'object' && 'maxBytes' in err.body
+                  ? Number((err.body as { maxBytes?: number }).maxBytes)
+                  : undefined,
+              fileSize: zipFile?.size,
+            })
           : err instanceof Error
-            ? err.message
+            ? /file too large/i.test(err.message)
+              ? mapZipUploadError({ status: 413, message: err.message, fileSize: zipFile?.size })
+              : err.message
             : PRODUCT_COPY.createAppFailed;
+      if (err instanceof ApiError && err.code === 'PROJECT_LIMIT_REACHED') {
+        setLimitMessage(err.message || '你的套餐应用数量已达上限，请升级套餐后再试。');
+        setLimitOpen(true);
+      }
       setError(message);
       setPending(false);
+      setUploadPhase('idle');
     }
   }
 
   return (
     <div className="mx-auto w-full max-w-xl">
+      <ConfirmDialog
+        open={limitOpen}
+        title="无法创建更多应用"
+        description={limitMessage || '你的套餐应用数量已达上限，请升级套餐后再试。'}
+        confirmLabel="查看套餐"
+        cancelLabel="返回应用列表"
+        onConfirm={() => {
+          setLimitOpen(false);
+          router.push('/plan');
+        }}
+        onCancel={() => {
+          setLimitOpen(false);
+          router.push('/projects');
+        }}
+      />
       <Link
         className="text-sm text-[var(--los-secondary)]"
         href={props.backHref || (fromOnboarding ? '/onboarding' : '/projects')}
@@ -429,17 +493,40 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
                 ref={zipInputRef}
                 type="file"
                 accept=".zip,application/zip"
-                className="block w-full text-sm"
+                className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
+                  setError(null);
+                  if (file && file.size > ZIP_SOURCE_MAX_BYTES) {
+                    setZipFile(null);
+                    setError(zipTooLargeMessage(file));
+                    event.target.value = '';
+                    return;
+                  }
                   setZipFile(file);
                   if (file && !name.trim()) {
                     setName(file.name.replace(/\.zip$/i, '') || 'uploaded-app');
                   }
                 }}
               />
-              {zipFile ? (
-                <p className="text-sm text-emerald-700">已选择：{zipFile.name}</p>
+              <button
+                type="button"
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 px-4 py-8 text-center transition hover:border-zinc-900 hover:bg-white"
+                onClick={() => zipInputRef.current?.click()}
+              >
+                <span className="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white">
+                  {zipFile ? '重新选择 ZIP' : '选择本地 ZIP 上传'}
+                </span>
+                <span className={`text-sm ${zipFile ? 'font-medium text-emerald-700' : 'text-zinc-500'}`}>
+                  {zipFile
+                    ? `已选择：${zipFile.name}（${formatZipSizeMb(zipFile.size)} MB）`
+                    : `点击上方按钮选择本地代码包（.zip，最大 ${formatZipSizeMb(ZIP_SOURCE_MAX_BYTES, 0)} MB）`}
+                </span>
+              </button>
+              {error && codeMode === 'zip' ? (
+                <pre className="whitespace-pre-wrap rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {error}
+                </pre>
               ) : null}
             </div>
           ) : null}
@@ -533,7 +620,7 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
             </div>
           ) : null}
 
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error && codeMode !== 'zip' ? <p className="text-sm text-red-600">{error}</p> : null}
 
           <div className="flex flex-col gap-2 sm:flex-row">
             {codeMode === 'public' ? (
@@ -578,6 +665,11 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
                 ? zipFile?.name || 'ZIP'
                 : sourceUrl}
           </p>
+          {codeMode === 'zip' && zipFile ? (
+            <p className="text-sm text-[var(--los-secondary)]">
+              文件大小：{formatZipSizeMb(zipFile.size)} MB
+            </p>
+          ) : null}
           <label className="block text-sm font-medium">
             {PRODUCT_COPY.appName}
             <input
@@ -611,7 +703,29 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
               })}
             </ul>
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? (
+            <pre className="whitespace-pre-wrap text-sm text-red-600">{error}</pre>
+          ) : null}
+          {error && codeMode === 'zip' ? (
+            <button
+              type="button"
+              className="text-sm font-medium text-zinc-900 underline"
+              disabled={pending}
+              onClick={() => {
+                setError(null);
+                setZipFile(null);
+                setStep('source');
+                queueMicrotask(() => zipInputRef.current?.click());
+              }}
+            >
+              重新选择 ZIP
+            </button>
+          ) : null}
+          {pending && codeMode === 'zip' ? (
+            <p className="text-sm text-[var(--los-secondary)]">
+              {uploadPhase === 'analyzing' ? '上传完成，正在分析项目…' : '正在上传代码…'}
+            </p>
+          ) : null}
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               className="rounded-lg border border-[var(--los-border)] px-4 py-2.5 text-sm"
@@ -629,7 +743,13 @@ export function CreateAppWizard(props: CreateAppWizardProps) {
               type="submit"
               disabled={pending || !purpose || !name.trim()}
             >
-              {pending ? '创建中…' : '继续智能检测'}
+              {pending
+                ? uploadPhase === 'analyzing'
+                  ? '正在分析…'
+                  : codeMode === 'zip'
+                    ? '正在上传…'
+                    : '创建中…'
+                : '继续智能检测'}
             </button>
           </div>
           <p className="text-center text-xs text-[var(--los-muted)]">

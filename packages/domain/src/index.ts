@@ -687,6 +687,8 @@ export {
   assertGatewayEnvironment,
   buildMerchantOrderNo,
   decideAlipayCheckout,
+  normalizeBillingCycle,
+  resolveCatalogPriceCents,
   PAYMENT_TEST_PLAN_CODE,
   PAYMENT_TEST_MONTHLY_CENTS,
   alipayConfigComplete,
@@ -695,9 +697,81 @@ export {
   returnUrlIsNotPaymentFact,
   userPaymentWaitCopy,
   type AlipayEnvironment,
+  type AlipayGates,
 } from './alipay-readiness';
 export { applyWebhookEvent, createAlipayCheckout, createMockCheckout, fulfillCommercialOrder, reconcilePayments, recordRefund, settleProviderRefund } from './payment-fulfillment';
 export { processSubscriptionLifecycle } from './subscription-lifecycle-runner';
+export {
+  SUBSCRIPTION_GRACE_PERIOD_DAYS,
+  SUBSCRIPTION_SOURCE,
+  BILLING_CYCLES,
+  normalizeSubscriptionSource,
+  isPaidSubscriptionSource,
+  isRevenueGeneratingSource,
+  sourceDisplayLabel,
+  parseBillingCycle,
+  systemClock,
+  fakeClock,
+  type BillingCycle,
+  type SystemClock,
+} from './subscription-lifecycle';
+export {
+  addCalendarYears,
+  calculatePeriodEnd,
+  renewalDue,
+  gracePeriodEndFrom,
+} from './billing-period';
+export {
+  shouldSkipSubscriptionActivation,
+  decideSubscriptionActivation,
+  buildGraceStartPatch,
+  entitlementPriority,
+  type ActivationPaymentInput,
+  type ActivationResult,
+} from './subscription-activation';
+export {
+  evaluateSubscriptionCompliance,
+  overQuotaBlocksCreate,
+  SAFE_DOWNGRADE_GUARANTEES,
+  type ComplianceStatus,
+} from './subscription-compliance';
+export {
+  detectSubscriptionDrift,
+  classifySubscriptionForBackfill,
+  type ReconcileFinding,
+  type BackfillClass,
+} from './subscription-reconciliation';
+export {
+  FORMAL_PRICES_LOCKED,
+  TERMS_VERSION_CURRENT,
+  PURCHASE_INTENT_TTL_MS,
+  readAlipayProviderMode,
+  describeAlipaySandboxOnlySemantics,
+  parsePaymentAccessMode,
+  workspacePercentageBucket,
+  accessPolicyAllows,
+  formalRevenueBucket,
+  lockedFormalPriceFen,
+  assertPricesMatchLocked,
+  describeSubscriptionChangeRule,
+  buildCheckoutPreview,
+  canPurchaseFormalPlan,
+  killSwitchBlocksNewCheckout,
+  killSwitchAllowsExistingFinalization,
+  purchaseIntentIsUsable,
+  buildPriceSnapshot,
+  buildFormalPaymentLaunchChecklist,
+  decideFormalAlipayCheckout,
+  formalPathIgnoresSandboxOnlyFlag,
+  mockActivationMatrix,
+  fulfillmentPendingEventType,
+  serverPriceMatchesLocked,
+  readFormalPaymentGates,
+  type AlipayProviderMode,
+  type PaymentAccessMode,
+  type FormalRevenueBucket,
+  type LaunchChecklistItem,
+} from './formal-payment-readiness';
 export {
   executeControlledLaunchRun,
   type ControlledStepContext,

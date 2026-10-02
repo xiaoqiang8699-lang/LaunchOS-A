@@ -1,5 +1,16 @@
 export const TRIAL_DAY_OPTIONS = [7, 14, 30] as const;
-export const SUBSCRIPTION_SOURCES = ['DEFAULT_FREE', 'TRIAL', 'MANUAL_ADMIN', 'COMPLIMENTARY', 'PAYMENT_PROVIDER'] as const;
+export const SUBSCRIPTION_SOURCES = [
+  'DEFAULT_FREE',
+  'FREE_DEFAULT',
+  'TRIAL',
+  'MANUAL_ADMIN',
+  'COMPLIMENTARY',
+  'PAYMENT_PROVIDER',
+  'PAYMENT',
+  'BETA_OVERRIDE',
+  'ADMIN_OVERRIDE',
+  'MIGRATED_LEGACY',
+] as const;
 export const DEFAULT_BUSINESS_TIMEZONE = 'Asia/Shanghai';
 export const IMMEDIATE_CANCEL_CONFIRMATION = '立即取消';
 
@@ -15,6 +26,14 @@ export const LIFECYCLE_EVENT_TYPES = [
   'SUBSCRIPTION_CANCELED',
   'COMPLIMENTARY_GRANTED',
   'SUBSCRIPTION_EXPIRED',
+  'SUBSCRIPTION_GRACE_STARTED',
+  'SUBSCRIPTION_RENEWED',
+  'SUBSCRIPTION_PLAN_CHANGE_SCHEDULED',
+  'SUBSCRIPTION_PLAN_CHANGE_APPLIED',
+  'SUBSCRIPTION_OVER_QUOTA',
+  'SUBSCRIPTION_RECONCILED',
+  'SUBSCRIPTION_CANCEL_REVERSED',
+  'SUBSCRIPTION_CREATED',
 ] as const;
 
 export const NOTIFICATION_INTENT_TYPES = [
@@ -46,6 +65,8 @@ export type LifecycleState = {
   manualAutoExtension: boolean;
   timeZone: string;
   workspaceStatus: string;
+  gracePeriodEnd?: string | null;
+  billingCycle?: string | null;
 };
 
 export type LifecyclePatch = {
@@ -66,7 +87,7 @@ function fail(message: string): Decision<never> {
 }
 
 export function isRevenueGenerating(source: string): boolean {
-  return source === 'PAYMENT_PROVIDER';
+  return source === 'PAYMENT_PROVIDER' || source === 'PAYMENT' || source === 'MOCK_PAYMENT';
 }
 
 export function planChangeDirection(fromCode: string, toCode: string): 'upgrade' | 'downgrade' | 'same' {
@@ -286,14 +307,27 @@ export function decideComplimentary(input: {
 }
 
 export function freeFallback(input: { status: string; source: string; planCode: string }): { planCode: 'free'; source: 'DEFAULT_FREE' } | null {
-  if (input.planCode === 'free' && input.source === 'DEFAULT_FREE') return { planCode: 'free', source: 'DEFAULT_FREE' };
-  if (input.status === 'CANCELED' || input.status === 'EXPIRED' || input.source === 'DEFAULT_FREE') {
+  if (input.planCode === 'free' && (input.source === 'DEFAULT_FREE' || input.source === 'FREE_DEFAULT')) {
+    return { planCode: 'free', source: 'DEFAULT_FREE' };
+  }
+  if (input.status === 'CANCELED' || input.status === 'EXPIRED' || input.source === 'DEFAULT_FREE' || input.source === 'FREE_DEFAULT') {
     return { planCode: 'free', source: 'DEFAULT_FREE' };
   }
   return null;
 }
 
-export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: { id: string; code: string }): LifecyclePatch | null {
+function isPaidLifecycleSource(source: string): boolean {
+  return source === 'PAYMENT_PROVIDER' || source === 'PAYMENT' || source === 'MOCK_PAYMENT';
+}
+
+export function nextLifecyclePatch(
+  state: LifecycleState,
+  now: Date,
+  freePlan: { id: string; code: string },
+  options?: { gracePeriodDays?: number },
+): LifecyclePatch | null {
+  const graceDays = options?.gracePeriodDays ?? (Number(process.env.SUBSCRIPTION_GRACE_PERIOD_DAYS ?? '3') || 3);
+
   if (state.status === 'TRIALING' && state.trialEndsAt && now.getTime() >= new Date(state.trialEndsAt).getTime()) {
     return patch(state, {
       idempotencyKey: `${state.id}:TRIAL_ENDED:${state.trialEndsAt}`,
@@ -309,6 +343,8 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
         source: 'DEFAULT_FREE',
         trialEndsAt: null,
         cancelAtPeriodEnd: false,
+        gracePeriodEnd: null,
+        billingCycle: 'NONE',
       },
     });
   }
@@ -330,10 +366,40 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
         complimentaryUntil: null,
         fallbackPlanId: null,
         fallbackPlanCode: null,
+        gracePeriodEnd: null,
       },
     });
   }
+
+  // Grace expired → EXPIRED + Free
+  if (state.status === 'GRACE_PERIOD') {
+    const graceEnd = state.gracePeriodEnd ? new Date(state.gracePeriodEnd).getTime() : 0;
+    if (graceEnd && now.getTime() >= graceEnd) {
+      return patch(state, {
+        idempotencyKey: `${state.id}:SUBSCRIPTION_EXPIRED:${state.gracePeriodEnd}`,
+        eventType: 'SUBSCRIPTION_EXPIRED',
+        toPlanId: freePlan.id,
+        effectiveAt: state.gracePeriodEnd!,
+        source: 'DEFAULT_FREE',
+        next: {
+          ...state,
+          planId: freePlan.id,
+          planCode: freePlan.code,
+          status: 'EXPIRED',
+          source: 'DEFAULT_FREE',
+          cancelAtPeriodEnd: false,
+          gracePeriodEnd: null,
+          billingCycle: 'NONE',
+          pendingPlanId: null,
+          pendingPlanCode: null,
+        },
+      });
+    }
+    return null;
+  }
+
   if (now.getTime() < new Date(state.currentPeriodEnd).getTime()) return null;
+
   if (state.pendingPlanId && state.pendingPlanCode) {
     const end = addCalendarMonths(new Date(state.currentPeriodEnd), 1, state.timeZone).toISOString();
     return patch(state, {
@@ -341,7 +407,7 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
       eventType: 'SUBSCRIPTION_DOWNGRADED',
       toPlanId: state.pendingPlanId,
       effectiveAt: state.currentPeriodEnd,
-      source: state.source,
+      source: state.pendingPlanCode === 'free' ? 'DEFAULT_FREE' : state.source,
       next: {
         ...state,
         planId: state.pendingPlanId,
@@ -350,10 +416,31 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
         pendingPlanCode: null,
         currentPeriodStart: state.currentPeriodEnd,
         currentPeriodEnd: end,
+        source: state.pendingPlanCode === 'free' ? 'DEFAULT_FREE' : state.source,
+        billingCycle: state.pendingPlanCode === 'free' ? 'NONE' : state.billingCycle,
+        gracePeriodEnd: null,
       },
     });
   }
+
   if (state.cancelAtPeriodEnd || state.status === 'CANCEL_AT_PERIOD_END') {
+    // Enter grace instead of immediate free drop for paid sources
+    if (isPaidLifecycleSource(state.source) && state.planCode !== 'free') {
+      const grace = buildGraceEndIso(state.currentPeriodEnd, graceDays, state.timeZone);
+      return patch(state, {
+        idempotencyKey: `${state.id}:SUBSCRIPTION_GRACE_STARTED:${state.currentPeriodEnd}`,
+        eventType: 'SUBSCRIPTION_GRACE_STARTED',
+        toPlanId: state.planId,
+        effectiveAt: state.currentPeriodEnd,
+        source: state.source,
+        next: {
+          ...state,
+          status: 'GRACE_PERIOD',
+          cancelAtPeriodEnd: false,
+          gracePeriodEnd: grace,
+        },
+      });
+    }
     return patch(state, {
       idempotencyKey: `${state.id}:SUBSCRIPTION_CANCELED:${state.currentPeriodEnd}`,
       eventType: 'SUBSCRIPTION_CANCELED',
@@ -367,10 +454,28 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
         status: 'CANCELED',
         source: 'DEFAULT_FREE',
         cancelAtPeriodEnd: false,
+        gracePeriodEnd: null,
+        billingCycle: 'NONE',
       },
     });
   }
-  if ((state.source === 'MANUAL_ADMIN' || state.source === 'PAYMENT_PROVIDER') && !state.manualAutoExtension && state.planCode !== 'free') {
+
+  if (isPaidLifecycleSource(state.source) && !state.manualAutoExtension && state.planCode !== 'free') {
+    const grace = buildGraceEndIso(state.currentPeriodEnd, graceDays, state.timeZone);
+    return patch(state, {
+      idempotencyKey: `${state.id}:SUBSCRIPTION_GRACE_STARTED:${state.currentPeriodEnd}`,
+      eventType: 'SUBSCRIPTION_GRACE_STARTED',
+      toPlanId: state.planId,
+      effectiveAt: state.currentPeriodEnd,
+      source: state.source,
+      next: {
+        ...state,
+        status: 'GRACE_PERIOD',
+        gracePeriodEnd: grace,
+      },
+    });
+  }
+  if (state.source === 'MANUAL_ADMIN' && !state.manualAutoExtension && state.planCode !== 'free') {
     return patch(state, {
       idempotencyKey: `${state.id}:SUBSCRIPTION_EXPIRED:${state.currentPeriodEnd}`,
       eventType: 'SUBSCRIPTION_EXPIRED',
@@ -383,9 +488,12 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
         planCode: freePlan.code,
         status: 'EXPIRED',
         source: 'DEFAULT_FREE',
+        gracePeriodEnd: null,
+        billingCycle: 'NONE',
       },
     });
   }
+
   if (state.manualAutoExtension && state.planCode !== 'free') {
     const end = addCalendarMonths(new Date(state.currentPeriodEnd), 1, state.timeZone).toISOString();
     return patch(state, {
@@ -398,6 +506,19 @@ export function nextLifecyclePatch(state: LifecycleState, now: Date, freePlan: {
     });
   }
   return null;
+}
+
+function buildGraceEndIso(periodEndIso: string, graceDays: number, timeZone: string): string {
+  // Calendar-day grace: reuse month adder by converting days via local date bump.
+  const local = zonedParts(new Date(periodEndIso), timeZone);
+  const probe = new Date(Date.UTC(local.year, local.month - 1, local.day + graceDays, 12, 0, 0));
+  const y = probe.getUTCFullYear();
+  const m = probe.getUTCMonth() + 1;
+  const d = probe.getUTCDate();
+  return zonedDateTimeToUtc(
+    { year: y, month: m, day: d, hour: local.hour, minute: local.minute, second: local.second },
+    timeZone,
+  ).toISOString();
 }
 
 function patch(state: LifecycleState, input: Omit<LifecyclePatch, 'fromPlanId' | 'keepsRunningServices'>): LifecyclePatch {

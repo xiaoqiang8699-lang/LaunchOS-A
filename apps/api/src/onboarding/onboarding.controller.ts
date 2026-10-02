@@ -4,6 +4,7 @@ import {
   Get,
   Post,
   UploadedFile,
+  UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -12,7 +13,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
 import { OnboardingService } from './onboarding.service';
-import { ZIP_INTAKE_LIMITS } from '@launchos/shared';
+import { UploadExceptionFilter } from '../common/upload-exception.filter';
+import { createZipMulterOptions } from '../common/zip-upload.multer';
 
 @Controller('onboarding')
 @UseGuards(JwtAuthGuard)
@@ -54,11 +56,8 @@ export class OnboardingController {
   }
 
   @Post('source/zip')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: ZIP_INTAKE_LIMITS.maxZipBytes, files: 1 },
-    }),
-  )
+  @UseFilters(UploadExceptionFilter)
+  @UseInterceptors(FileInterceptor('file', createZipMulterOptions()))
   connectZip(
     @CurrentUser() user: AuthUser,
     @UploadedFile() file?: Express.Multer.File,

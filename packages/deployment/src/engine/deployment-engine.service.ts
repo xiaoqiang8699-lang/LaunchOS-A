@@ -262,6 +262,7 @@ export class DeploymentEngineService {
       });
       await this.finalizeApplicationVersion(deploymentId, ApplicationVersionStatus.ACTIVE);
       await this.recordSuccessfulReleasePointers(deploymentId);
+      await this.trackDeploySuccess(deploymentId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Deployment failed';
       const classified = classifyDeploymentFailure(message);
@@ -282,6 +283,7 @@ export class DeploymentEngineService {
       if (finalAttempt) {
         await this.finalizeApplicationVersion(deploymentId, ApplicationVersionStatus.FAILED);
         await this.markNewServiceInstancesFailedOnDeployFailure(deploymentId);
+        await this.trackDeployFailed(deploymentId, classified.userMessage, classified.code);
         await this.diagnoseFailure(deploymentId, message).catch((diagnosisError: unknown) => {
           const detail =
             diagnosisError instanceof Error ? diagnosisError.message : 'Diagnosis failed';
@@ -3534,6 +3536,66 @@ export class DeploymentEngineService {
         previousDeploymentId: pointers.previousDeploymentId,
       },
     });
+  }
+
+  private async trackDeploySuccess(deploymentId: string): Promise<void> {
+    try {
+      const deployment = await this.prisma.deployment.findUnique({
+        where: { id: deploymentId },
+        select: {
+          id: true,
+          projectId: true,
+          usageClass: true,
+          project: { select: { workspaceId: true, workspace: { select: { ownerId: true } } } },
+        },
+      });
+      if (!deployment || deployment.usageClass !== 'REAL_EXECUTION') return;
+      await this.prisma.productEvent.create({
+        data: {
+          name: 'DEPLOY_SUCCESS',
+          userId: deployment.project.workspace.ownerId,
+          workspaceId: deployment.project.workspaceId,
+          projectId: deployment.projectId,
+          metadata: { deploymentId: deployment.id },
+        },
+      });
+    } catch {
+      // Analytics must never block deployment completion.
+    }
+  }
+
+  private async trackDeployFailed(
+    deploymentId: string,
+    errorMessage: string,
+    failureCode: string,
+  ): Promise<void> {
+    try {
+      const deployment = await this.prisma.deployment.findUnique({
+        where: { id: deploymentId },
+        select: {
+          id: true,
+          projectId: true,
+          usageClass: true,
+          project: { select: { workspaceId: true, workspace: { select: { ownerId: true } } } },
+        },
+      });
+      if (!deployment || deployment.usageClass !== 'REAL_EXECUTION') return;
+      await this.prisma.productEvent.create({
+        data: {
+          name: 'DEPLOY_FAILED',
+          userId: deployment.project.workspace.ownerId,
+          workspaceId: deployment.project.workspaceId,
+          projectId: deployment.projectId,
+          metadata: {
+            deploymentId: deployment.id,
+            errorMessage: String(errorMessage || '').slice(0, 200),
+            failureCode: String(failureCode || '').slice(0, 80),
+          },
+        },
+      });
+    } catch {
+      // Analytics must never block deployment failure handling.
+    }
   }
 
   private async setUploadStatus(

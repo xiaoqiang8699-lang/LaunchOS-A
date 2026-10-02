@@ -33,6 +33,8 @@ import { AlphaTestsModule } from './alpha-tests/alpha-tests.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { AccountModule } from './account/account.module';
 import { AdminModule } from './admin/admin.module';
+import { LifecycleModule } from './lifecycle/lifecycle.module';
+import { AIGrowthModule } from './ai-growth/ai-growth.module';
 
 @Module({
   imports: [
@@ -70,6 +72,8 @@ import { AdminModule } from './admin/admin.module';
     OnboardingModule,
     AccountModule,
     AdminModule,
+    LifecycleModule,
+    AIGrowthModule,
   ],
 })
 export class AppModule {}

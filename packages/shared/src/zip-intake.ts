@@ -3,11 +3,25 @@
  */
 import { posix } from 'node:path';
 
+/** Canonical ZIP source upload limit — keep Frontend / API / Gateway aligned. */
+export const ZIP_SOURCE_MAX_BYTES = 1200 * 1024 * 1024;
+
 export const ZIP_INTAKE_LIMITS = {
-  maxZipBytes: 80 * 1024 * 1024,
-  maxExtractedBytes: 250 * 1024 * 1024,
-  maxFileCount: 8_000,
+  maxZipBytes: ZIP_SOURCE_MAX_BYTES,
+  /** Allow headroom above a ~1.2GB archive after ignoring build dirs. */
+  maxExtractedBytes: 6 * 1024 * 1024 * 1024,
+  maxFileCount: 50_000,
   maxEntryNameLength: 512,
+} as const;
+
+export const SOURCE_ARCHIVE_ERROR_CODES = {
+  TOO_LARGE: 'SOURCE_ARCHIVE_TOO_LARGE',
+  INVALID: 'SOURCE_ARCHIVE_INVALID',
+  EXTRACT_TOO_LARGE: 'SOURCE_ARCHIVE_EXTRACT_TOO_LARGE',
+  TOO_MANY_FILES: 'SOURCE_ARCHIVE_TOO_MANY_FILES',
+  UPLOAD_FAILED: 'SOURCE_ARCHIVE_UPLOAD_FAILED',
+  EMPTY: 'SOURCE_ARCHIVE_EMPTY',
+  SLIP: 'SOURCE_ARCHIVE_PATH_REJECTED',
 } as const;
 
 export const ZIP_IGNORED_PATH_SEGMENTS = new Set([
@@ -35,6 +49,11 @@ export const ZIP_BLOCKED_EXTENSIONS = new Set([
   '.msi',
   '.dmg',
 ]);
+
+export function formatBytesAsMb(bytes: number, digits = 1): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0';
+  return (bytes / (1024 * 1024)).toFixed(digits);
+}
 
 export function sanitizeZipEntryPath(raw: string): string | null {
   const normalized = String(raw || '')
@@ -73,6 +92,62 @@ export function assertExtractBudget(input: {
   }
   if (input.extractedBytes > ZIP_INTAKE_LIMITS.maxExtractedBytes) {
     throw new Error('ZIP_EXTRACTED_TOO_LARGE');
+  }
+}
+
+export function mapZipIntakeError(code: string): {
+  httpStatus: number;
+  code: string;
+  message: string;
+  maxBytes?: number;
+} {
+  switch (code) {
+    case 'ZIP_TOO_LARGE':
+    case 'LIMIT_FILE_SIZE':
+    case 'SOURCE_ARCHIVE_TOO_LARGE':
+      return {
+        httpStatus: 413,
+        code: SOURCE_ARCHIVE_ERROR_CODES.TOO_LARGE,
+        message: '代码压缩包超过允许大小',
+        maxBytes: ZIP_INTAKE_LIMITS.maxZipBytes,
+      };
+    case 'ZIP_TOO_MANY_FILES':
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.TOO_MANY_FILES,
+        message: '压缩包内文件数量过多，请精简后再上传',
+      };
+    case 'ZIP_EXTRACTED_TOO_LARGE':
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.EXTRACT_TOO_LARGE,
+        message: '解压后内容过大，请删除构建产物后重新压缩',
+      };
+    case 'ZIP_EMPTY':
+    case 'ZIP_EMPTY_CONTENT':
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.EMPTY,
+        message: 'ZIP 内容为空',
+      };
+    case 'ZIP_INVALID':
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.INVALID,
+        message: 'ZIP 文件无法读取',
+      };
+    case 'ZIP_SLIP':
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.SLIP,
+        message: '压缩包包含不安全路径，已拒绝',
+      };
+    default:
+      return {
+        httpStatus: 400,
+        code: SOURCE_ARCHIVE_ERROR_CODES.UPLOAD_FAILED,
+        message: '上传代码失败，请稍后重试',
+      };
   }
 }
 

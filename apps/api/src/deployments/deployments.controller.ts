@@ -3,15 +3,29 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUser } from '../auth/auth.types';
 import { DeploymentsService } from './deployments.service';
+import { AIDeploymentCopilotService } from '../ai-growth/ai-deployment-copilot.service';
 
 @Controller('deployments')
 @UseGuards(JwtAuthGuard)
 export class DeploymentsController {
-  constructor(private readonly deploymentsService: DeploymentsService) {}
+  constructor(
+    private readonly deploymentsService: DeploymentsService,
+    private readonly copilot: AIDeploymentCopilotService,
+  ) {}
 
   @Get(':id/diagnosis')
   getDiagnosis(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.deploymentsService.getDiagnosis(user.id, id);
+  }
+
+  @Get(':id/copilot')
+  getCopilot(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.copilot.getCopilot(user.id, id);
+  }
+
+  @Post(':id/copilot/analyze')
+  analyzeCopilot(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.copilot.getCopilot(user.id, id, { force: true });
   }
 
   @Get(':id/artifacts')

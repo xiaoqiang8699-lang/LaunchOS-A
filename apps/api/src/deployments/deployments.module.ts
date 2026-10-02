@@ -10,9 +10,12 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { ManagedHostingModule } from '../managed-hosting/managed-hosting.module';
 import { CapacityModule } from '../capacity/capacity.module';
 import { BillingModule } from '../billing/billing.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
+import { AIGrowthModule } from '../ai-growth/ai-growth.module';
 import { DeploymentsController } from './deployments.controller';
 import { DeploymentsService } from './deployments.service';
 import { ProjectDeploymentsController } from './project-deployments.controller';
+import { ProjectPreflightController } from './project-preflight.controller';
 
 @Module({
   imports: [
@@ -25,8 +28,10 @@ import { ProjectDeploymentsController } from './project-deployments.controller';
     ManagedHostingModule,
     CapacityModule,
     BillingModule,
+    AnalyticsModule,
+    AIGrowthModule,
   ],
-  controllers: [ProjectDeploymentsController, DeploymentsController],
+  controllers: [ProjectPreflightController, ProjectDeploymentsController, DeploymentsController],
   providers: [
     DeploymentsService,
     {

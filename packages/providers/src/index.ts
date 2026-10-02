@@ -128,5 +128,12 @@ export type {
 } from './core/cache-provider.interface';
 export type { AlibabaCloudRedisProviderOptions } from './aliyun/alibaba-cloud-redis-provider';
 export { AlipayPaymentProvider } from './alipay/alipay-payment-provider';
-export { signAlipayContent, signAlipayParams } from './alipay/signature';
+export { signAlipayContent, signAlipayParams, selfSignVerify, materialFingerprint, canonicalAlipayPayload } from './alipay/signature';
+export {
+  buildPagePayUrl,
+  inspectPagePayUrl,
+  alipayKeyFingerprints,
+  requestSignIncludesSignType,
+  verifyAlipayConfiguration,
+} from './alipay/gateway';
 export type { GatewayFetch } from './alipay/gateway';

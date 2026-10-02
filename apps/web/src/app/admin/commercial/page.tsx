@@ -5,10 +5,12 @@ import { PageHeader, Section } from '@/components/ui/section';
 import { Card } from '@/components/ui/section';
 
 const TABS = [
-  { href: '/admin/subscriptions', label: '订阅', desc: '全部订阅与生命周期操作' },
+  { href: '/admin/commercial/subscriptions', label: '订阅', desc: '生命周期、来源、宽限期与合规' },
   { href: '/admin/plans', label: '套餐', desc: 'Free / Pro / Team / Enterprise' },
   { href: '/admin/orders', label: '订单', desc: 'CommercialOrder 记录' },
   { href: '/admin/payments', label: '支付', desc: '支付与渠道状态' },
+  { href: '/admin/commercial/payment-test', label: '支付测试', desc: '¥0.90 PAYMENT_TEST（默认禁用）' },
+  { href: '/admin/commercial/payment-controls', label: '支付控制', desc: 'Kill Switch / 灰度 / Provider 就绪（正式收费保持关闭）' },
   { href: '/admin/invoices', label: '发票', desc: '账单与结算' },
   { href: '/admin/upgrade-requests', label: '升级申请', desc: '人工审批入口' },
   { href: '/admin/payment-providers', label: '支付渠道', desc: 'Alipay 等配置（只读为主）' },

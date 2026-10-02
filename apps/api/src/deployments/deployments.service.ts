@@ -48,6 +48,7 @@ import {
 } from '../managed-hosting/managed-hosting-scheduler.service';
 import { CapacityGovernanceService } from '../capacity/capacity-governance.service';
 import { EntitlementGovernanceService } from '../billing/entitlement-governance.service';
+import { ProductAnalyticsService } from '../analytics/product-analytics.service';
 import { WorkerPresenceService } from '../queue/worker-presence.service';
 import {  RuntimeConfigService,
   toMissingConfigUserMessage,
@@ -122,6 +123,7 @@ export class DeploymentsService {
     private readonly managedHosting: ManagedHostingSchedulerService,
     private readonly capacity: CapacityGovernanceService,
     private readonly entitlements: EntitlementGovernanceService,
+    private readonly analytics: ProductAnalyticsService,
   ) {}
 
   async create(userId: string, projectId: string, dto: CreateDeploymentDto) {
@@ -523,6 +525,16 @@ export class DeploymentsService {
       where: { id: created.id },
       data: { bullmqJobId: jobId, lastActivityAt: new Date() },
     });
+
+    void this.analytics
+      .track({
+        event: 'DEPLOY_STARTED',
+        userId,
+        workspaceId: membership.workspace.id,
+        projectId,
+        metadata: { deploymentId: created.id },
+      })
+      .catch(() => undefined);
 
     return this.getById(userId, created.id);
   }

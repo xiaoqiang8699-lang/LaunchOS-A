@@ -1,4 +1,4 @@
-import { createSign, createVerify, createPublicKey } from 'node:crypto';
+import { createSign, createVerify, createPublicKey, createPrivateKey, createHash } from 'node:crypto';
 
 function wrapPem(kind: 'PRIVATE KEY' | 'RSA PRIVATE KEY' | 'PUBLIC KEY', value: string): string {
   const trimmed = value.trim();
@@ -8,9 +8,20 @@ function wrapPem(kind: 'PRIVATE KEY' | 'RSA PRIVATE KEY' | 'PUBLIC KEY', value: 
   return `-----BEGIN ${kind}-----\n${lines}\n-----END ${kind}-----`;
 }
 
-export function canonicalAlipayPayload(params: Record<string, string>): string {
+/**
+ * Alipay OpenAPI request signing:
+ * exclude only `sign` (empty values too). `sign_type` MUST be included.
+ *
+ * Async notify verification:
+ * exclude both `sign` and `sign_type`.
+ */
+export function canonicalAlipayPayload(
+  params: Record<string, string>,
+  mode: 'request' | 'notify' = 'notify',
+): string {
+  const skip = mode === 'request' ? new Set(['sign']) : new Set(['sign', 'sign_type']);
   return Object.keys(params)
-    .filter((key) => key !== 'sign' && key !== 'sign_type' && params[key] !== '')
+    .filter((key) => !skip.has(key) && params[key] !== '')
     .sort()
     .map((key) => `${key}=${params[key]}`)
     .join('&');
@@ -35,8 +46,9 @@ export function signAlipayContent(content: string, privateKey: string): string {
   throw last instanceof Error ? last : new Error('KEY_INVALID');
 }
 
+/** Merchant → Alipay request signature (RSA2). Includes sign_type. */
 export function signAlipayParams(params: Record<string, string>, privateKey: string): string {
-  return signAlipayContent(canonicalAlipayPayload(params), privateKey);
+  return signAlipayContent(canonicalAlipayPayload(params, 'request'), privateKey);
 }
 
 export function verifyAlipayContent(content: string, signature: string, publicKey: string): boolean {
@@ -49,9 +61,10 @@ export function verifyAlipayContent(content: string, signature: string, publicKe
   }
 }
 
+/** Alipay → merchant notify verification. Excludes sign + sign_type. */
 export function verifyAlipayParams(params: Record<string, string>, publicKey: string): boolean {
   if (!params.sign) return false;
-  return verifyAlipayContent(canonicalAlipayPayload(params), params.sign, publicKey);
+  return verifyAlipayContent(canonicalAlipayPayload(params, 'notify'), params.sign, publicKey);
 }
 
 export function privateKeyCanSign(privateKey: string): boolean {
@@ -70,6 +83,32 @@ export function publicKeyParses(publicKey: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Self-check: sign with app private key, verify with derived app public key. */
+export function selfSignVerify(privateKey: string, sample = 'launchos-alipay-signature-self-test'): boolean {
+  try {
+    const signature = signAlipayContent(sample, privateKey);
+    const keyObj = (() => {
+      for (const candidate of privateKeyCandidates(privateKey)) {
+        try {
+          return createPrivateKey(candidate);
+        } catch {
+          /* try next */
+        }
+      }
+      return null;
+    })();
+    if (!keyObj) return false;
+    const pub = createPublicKey(keyObj).export({ type: 'spki', format: 'pem' }).toString();
+    return verifyAlipayContent(sample, signature, pub);
+  } catch {
+    return false;
+  }
+}
+
+export function materialFingerprint(value: string): string {
+  return createHash('sha256').update(value.replace(/\s+/g, '')).digest('hex').slice(0, 16);
 }
 
 export function stringifyParams(input: Record<string, unknown>): Record<string, string> {

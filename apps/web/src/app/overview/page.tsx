@@ -31,6 +31,17 @@ type UsageView = {
   override?: { reason?: string } | null;
 };
 
+type ActivationView = {
+  activated: boolean;
+  stageLabel: string;
+  statusLabel: string;
+  primaryBlocker: string | null;
+  blockerLabel: string | null;
+  progress: { completedSteps: number; totalSteps: number };
+  nextActions: Array<{ title: string; href: string | null; reason: string }>;
+  projectId: string | null;
+};
+
 function needsAttention(app: AppSummary): boolean {
   return (
     app.applicationStatus === 'FAILED' ||
@@ -43,6 +54,7 @@ export default function OverviewPage() {
   const router = useRouter();
   const [apps, setApps] = useState<AppSummary[] | null>(null);
   const [usage, setUsage] = useState<UsageView | null>(null);
+  const [activation, setActivation] = useState<ActivationView | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -53,10 +65,12 @@ export default function OverviewPage() {
     void Promise.all([
       api<AppSummary[]>('/apps'),
       api<UsageView>('/account/usage').catch(() => null),
+      api<ActivationView>('/activation').catch(() => null),
     ])
-      .then(([nextApps, nextUsage]) => {
+      .then(([nextApps, nextUsage, nextActivation]) => {
         setApps(nextApps);
         setUsage(nextUsage);
+        setActivation(nextActivation);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : '加载失败'));
   }, [router]);
@@ -119,6 +133,30 @@ export default function OverviewPage() {
               </Link>
             </Card>
           </div>
+
+          {activation && !activation.activated ? (
+            <section className="mt-8 space-y-3">
+              <h2 className="text-lg font-semibold">继续完成上线</h2>
+              <Card className="p-5">
+                <p className="text-sm text-[var(--los-secondary)]">
+                  应用上线进度 {activation.progress.completedSteps} / {activation.progress.totalSteps}
+                </p>
+                <p className="mt-2 text-base font-medium">
+                  当前：{activation.blockerLabel || activation.primaryBlocker || activation.stageLabel}
+                </p>
+                <p className="mt-1 text-sm text-[var(--los-secondary)]">
+                  下一步：{activation.nextActions[0]?.reason || activation.statusLabel}
+                </p>
+                {activation.nextActions[0]?.href ? (
+                  <div className="mt-4">
+                    <PrimaryLink href={activation.nextActions[0].href}>
+                      {activation.nextActions[0].title}
+                    </PrimaryLink>
+                  </div>
+                ) : null}
+              </Card>
+            </section>
+          ) : null}
 
           {attentionApps.length > 0 ? (
             <section className="mt-8 space-y-3">

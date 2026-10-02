@@ -40,6 +40,11 @@ const listSelect = {
   accountStatus: true,
   createdAt: true,
   lastLoginAt: true,
+  userTags: {
+    select: { tag: true },
+    orderBy: { createdAt: 'desc' as const },
+    take: 8,
+  },
   memberships: {
     select: {
       workspace: {
@@ -475,6 +480,7 @@ export class AdminUsersService {
 
   private presentList(row: Prisma.UserGetPayload<{ select: typeof listSelect }>) {
     const subscription = row.memberships.find((member) => member.workspace.subscriptions[0])?.workspace.subscriptions[0];
+    const tags = row.userTags.map((item) => item.tag);
     return {
       id: row.id,
       displayName: row.name,
@@ -489,6 +495,17 @@ export class AdminUsersService {
       subscriptionStatus: subscription?.status ?? 'NONE',
       accountStatus: row.accountStatus,
       accountStatusLabel: accountStatusLabel(row.accountStatus),
+      tags,
+      needsOnboarding: tags.includes('NEEDS_ONBOARDING'),
+      lifecycleHint: tags.includes('NEEDS_ONBOARDING')
+        ? '需要引导'
+        : tags.includes('DEPLOY_BLOCKED')
+          ? '部署阻塞'
+          : tags.includes('UPGRADE_POTENTIAL')
+            ? '升级潜力'
+            : tags.includes('DORMANT')
+              ? '沉默'
+              : null,
     };
   }
 }

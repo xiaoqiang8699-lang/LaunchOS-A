@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
 import { SourceType, type Prisma } from '@launchos/database';
 import {
   assertOnboardingEventSafe,
@@ -19,7 +19,8 @@ import { PrismaService } from '../database/prisma.service';
 import { LaunchService } from '../launch/launch.service';
 import { ProjectsService } from '../projects/projects.service';
 import { WorkspaceAccessService } from '../workspaces/workspace-access.service';
-import { extractOnboardingZip, persistZipUpload } from './zip-intake.util';
+import { extractOnboardingZip, persistZipUpload, persistZipUploadFromPath, cleanupTempUpload } from './zip-intake.util';
+import { httpExceptionFromZipError } from '../common/zip-upload.multer';
 
 @Injectable()
 export class OnboardingService {
@@ -88,23 +89,35 @@ export class OnboardingService {
 
   async connectZipSource(
     userId: string,
-    file: { buffer: Buffer; originalname?: string; size?: number } | undefined,
+    file: Express.Multer.File | undefined,
   ) {
-    if (!file?.buffer?.byteLength) {
-      throw new BadRequestException('请选择 ZIP 文件');
+    const diskPath = file?.path;
+    const size = file?.size ?? file?.buffer?.byteLength ?? 0;
+    if (!file || (!diskPath && !file.buffer?.byteLength)) {
+      throw new BadRequestException({
+        code: 'SOURCE_ARCHIVE_UPLOAD_FAILED',
+        message: '请选择 ZIP 文件',
+      });
     }
     if (!/\.zip$/i.test(file.originalname || 'upload.zip')) {
-      throw new BadRequestException('仅支持 .zip 文件');
+      throw new BadRequestException({
+        code: 'SOURCE_ARCHIVE_INVALID',
+        message: '仅支持 .zip 文件',
+      });
     }
-    await this.recordEvents(userId, null, ['LOCAL_ZIP_UPLOAD_STARTED'], {
-      size: file.size ?? file.buffer.byteLength,
+    await this.recordEvents(userId, null, ['SOURCE_ZIP_UPLOAD_STARTED', 'LOCAL_ZIP_UPLOAD_STARTED'], {
+      sizeBytes: size,
     });
 
     const uploadId = randomUUID();
-    let extracted;
+    let archivedPath: string | null = null;
+    let projectId: string | null = null;
     try {
-      await persistZipUpload(uploadId, file.buffer);
-      // Create project first so we have a stable workspace directory id.
+      if (diskPath) {
+        archivedPath = await persistZipUploadFromPath(uploadId, diskPath);
+      } else if (file.buffer) {
+        archivedPath = await persistZipUpload(uploadId, file.buffer);
+      }
       const draftName = deriveTempName(file.originalname);
       const project = await this.projects.create(userId, {
         name: draftName,
@@ -116,10 +129,15 @@ export class OnboardingService {
           isPrivate: false,
         },
       });
+      projectId = project.id;
+      await this.recordEvents(userId, project.id, ['SOURCE_ZIP_ANALYSIS_STARTED'], {
+        sizeBytes: size,
+      });
       const workspaceDir = this.git.workspaceDir(project.id);
-      extracted = await extractOnboardingZip({
+      const extracted = await extractOnboardingZip({
         projectId: project.id,
-        zipBuffer: file.buffer,
+        zipPath: archivedPath || undefined,
+        zipBuffer: !archivedPath && file.buffer ? file.buffer : undefined,
         originalName: file.originalname,
         workspaceDir,
       });
@@ -141,26 +159,40 @@ export class OnboardingService {
         where: { id: userId },
         data: { onboardingStatus: 'IN_PROGRESS', hasCompletedOnboarding: false },
       });
-      const events: OnboardingEventName[] = ['SOURCE_CONNECTED', 'LOCAL_ZIP_UPLOAD_SUCCEEDED'];
+      const events: OnboardingEventName[] = [
+        'SOURCE_CONNECTED',
+        'LOCAL_ZIP_UPLOAD_SUCCEEDED',
+        'SOURCE_ZIP_UPLOAD_SUCCEEDED',
+        'SOURCE_ZIP_ANALYSIS_SUCCEEDED',
+      ];
       if (user.onboardingStatus === 'NOT_STARTED') events.unshift('ONBOARDING_STARTED');
       await this.recordEvents(userId, project.id, events, {
         fileCount: extracted.fileCount,
         appName: extracted.appName,
+        sizeBytes: size,
       });
       return this.getState(userId);
     } catch (error) {
+      if (projectId) {
+        await this.prisma.project.delete({ where: { id: projectId } }).catch(() => undefined);
+      }
+      if (error instanceof HttpException) {
+        throw error;
+      }
       const code = error instanceof Error ? error.message : 'ZIP_FAILED';
-      const message =
-        code === 'ZIP_TOO_LARGE'
-          ? 'ZIP 文件过大，请压缩后再试。'
-          : code === 'ZIP_TOO_MANY_FILES' || code === 'ZIP_EXTRACTED_TOO_LARGE'
-            ? '项目文件过多或过大，请精简后再上传。'
-            : code === 'ZIP_EMPTY' || code === 'ZIP_EMPTY_CONTENT'
-              ? 'ZIP 内容为空。'
-              : code === 'ZIP_INVALID'
-                ? 'ZIP 文件无法读取。'
-                : '上传失败，请重新尝试。';
-      throw new BadRequestException(message);
+      const failEvents: OnboardingEventName[] =
+        code.startsWith('ZIP_') && !/UPLOAD|EMPTY|INVALID/.test(code)
+          ? ['SOURCE_ZIP_ANALYSIS_FAILED', 'SOURCE_ZIP_UPLOAD_FAILED']
+          : ['SOURCE_ZIP_UPLOAD_FAILED'];
+      await this.recordEvents(userId, null, failEvents, {
+        sizeBytes: size,
+        errorCategory: code,
+      }).catch(() => undefined);
+      throw httpExceptionFromZipError(code);
+    } finally {
+      if (diskPath) {
+        await cleanupTempUpload(diskPath);
+      }
     }
   }
 
